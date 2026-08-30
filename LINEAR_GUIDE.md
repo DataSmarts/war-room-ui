@@ -11,8 +11,8 @@ time. A decision is not done until its consequence lives in the file the agent r
 
 - Any non-trivial unit of work — before starting it, or the moment it is discovered
   and deferred. Past, present, and future all live here.
-- Bugs, ideas, and follow-ups noticed mid-run. Filing takes ten seconds; losing one
-  costs an Appendix C.
+- Bugs, ideas, and follow-ups noticed mid-run. Filing takes ten seconds; an unfiled
+  follow-up is one forgotten conversation away from being lost.
 - Decisions worth remembering: file it, label `decision`, close it immediately —
   after folding the consequence into the workflow or doc it governs.
 - **Skip**: typos, one-liners, doc touch-ups — anything where the issue would just
