@@ -6,7 +6,8 @@
  * Rules this file enforces (see CLAUDE.md):
  *  - Purple is IDENTITY (brand, active nav, primary action, focus ring) — never state.
  *  - Color only means status. Status ramp: ok green / warn amber / fail vermilion
- *    (orange-leaning, so failure never fights the brand purple) / info sky.
+ *    (orange-leaning, so failure never fights the brand purple) / info sky — plus
+ *    `unknown`, which is the deliberate ABSENCE of a hue and not a fifth one.
  *  - Chart ramp starts at purple then moves away — no second violet in a series.
  *  - Near-black base, never pure black; elevated surfaces one notch lighter;
  *    low-alpha hairlines instead of shadows; three text levels.
@@ -36,6 +37,10 @@
   --status-warn: #f59e0b;
   --status-fail: #e54d2e; /* vermilion, deliberately orange-leaning */
   --status-info: #38bdf8;
+  /* Not a fifth hue: absent knowledge, bound to the metadata text level so it cannot
+   * drift into one. A `stalled` run or a degraded provider card gets this, because a
+   * color would be a claim we cannot back. See CLAUDE.md § Honest state. */
+  --status-unknown: var(--text-3);
 
   /* chart categorical ramp: purple then AWAY */
   --chart-1: #8b5cf6;
@@ -81,6 +86,7 @@
   --color-status-warn: var(--status-warn);
   --color-status-fail: var(--status-fail);
   --color-status-info: var(--status-info);
+  --color-status-unknown: var(--status-unknown);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
