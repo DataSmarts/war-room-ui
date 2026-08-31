@@ -1,0 +1,46 @@
+#!/bin/bash
+# Refuse to push if a plaintext env file has drifted from its committed .enc.
+# Compares decrypted content rather than re-encrypting: sops output is
+# non-deterministic (fresh nonce/timestamp per run), so a byte diff would
+# flag every .enc as stale even when nothing meaningful changed.
+# Install: git config core.hooksPath .githooks (done automatically by `npm install`).
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if ! command -v sops >/dev/null 2>&1; then
+  echo "warning: sops not installed — skipping env-encryption check (brew install sops)" >&2
+  exit 0
+fi
+
+stale=()
+for plain in .env .env.*; do
+  [ -e "$plain" ] || continue
+  case "$plain" in
+    *.enc | *.bak | .env.example) continue ;;
+  esac
+  [[ $plain =~ ^\.env(\.[a-zA-Z0-9_-]+)?$ ]] || continue
+
+  enc="$plain.enc"
+  if [ ! -e "$enc" ]; then
+    stale+=("$enc (missing)")
+    continue
+  fi
+
+  tmp=$(mktemp "${TMPDIR:-/tmp}/sops-env.XXXXXX")
+  if ! sops -d --input-type dotenv --output-type dotenv "$enc" >"$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    echo "warning: could not decrypt $enc to verify — is your age key present?" >&2
+    continue
+  fi
+  # sops drops blank lines on a dotenv round-trip; ignore them like decrypt-env.sh does.
+  diff -q -B "$plain" "$tmp" >/dev/null 2>&1 || stale+=("$enc")
+  rm -f "$tmp"
+done
+
+if [ "${#stale[@]}" -gt 0 ]; then
+  echo "error: encrypted env file(s) out of date with local plaintext: ${stale[*]}" >&2
+  echo "Run ./encrypt-env.sh, then git add/commit the .enc file(s) before pushing." >&2
+  exit 1
+fi

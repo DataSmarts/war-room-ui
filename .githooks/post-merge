@@ -1,0 +1,14 @@
+#!/bin/bash
+# After `git pull`/`git merge`, refresh plaintext env files from any .enc that changed.
+# Install: git config core.hooksPath .githooks (done automatically by `npm install`).
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if ! command -v sops >/dev/null 2>&1; then
+  echo "warning: sops not installed — skipping env decryption (brew install sops)" >&2
+  exit 0
+fi
+
+./decrypt-env.sh

@@ -1,0 +1,17 @@
+#!/bin/bash
+# After a branch checkout, refresh plaintext env files from any .enc that changed.
+# Skipped for single-file checkouts (git checkout -- <file>), which pass flag 0.
+# Install: git config core.hooksPath .githooks (done automatically by `npm install`).
+set -euo pipefail
+
+[ "${3:-0}" = "1" ] || exit 0
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if ! command -v sops >/dev/null 2>&1; then
+  echo "warning: sops not installed — skipping env decryption (brew install sops)" >&2
+  exit 0
+fi
+
+./decrypt-env.sh

@@ -19,4 +19,13 @@ cp .env.example .env.local   # fill in the two values
 npm run dev
 ```
 
+Env values are secret but the repo is public, so they're committed encrypted
+(`.env.local.enc`, via [sops](https://github.com/getsops/sops) + age) and decrypted
+to plaintext on disk. `npm install` wires up git hooks (`.githooks/`, via
+`core.hooksPath`) that handle the round trip automatically: pulling/checking out a
+branch decrypts any updated `.enc` into plaintext, and pushing is blocked if your
+plaintext has drifted from what's encrypted. Run `./encrypt-env.sh` after editing an
+env file, then commit the `.enc` it produces. Requires `brew install sops` and an
+age key at `~/.config/sops/age/keys.txt` matching the recipient in `.sops.yaml`.
+
 No license: source-visible, all rights reserved.

@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+.idea/
 
 # debug
 npm-debug.log*
@@ -30,9 +31,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — plaintext stays local; sops-encrypted .enc counterparts are tracked
 .env*
 !.env.example
+!.env*.enc
 
 # vercel
 .vercel
