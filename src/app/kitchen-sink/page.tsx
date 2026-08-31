@@ -7,11 +7,15 @@ const surfaces = [
   { name: "surface-2", cls: "bg-surface-2" },
 ];
 
-const statuses = [
-  { name: "ok", cls: "bg-status-ok" },
-  { name: "warn", cls: "bg-status-warn" },
-  { name: "fail", cls: "bg-status-fail" },
-  { name: "info", cls: "bg-status-info" },
+// The run-state vocabulary and its one rendering. CLAUDE.md § Honest state is the source
+// of truth; this row is where you check it still reads right. Five states, five distinct
+// renderings — severity is the color axis, the word is the state.
+const runStates = [
+  { state: "completed", variant: "ok" as const, note: "finished — even when error is set" },
+  { state: "running", variant: "info" as const, note: "a page landed in the last 10 min" },
+  { state: "errored", variant: "warn" as const, note: "this query failed; the sweep carried on" },
+  { state: "aborted", variant: "fail" as const, note: "the sweep stopped here, and recorded why" },
+  { state: "stalled", variant: "unknown" as const, note: "no ending, no reason, nothing moved" },
 ];
 
 const chart = ["bg-chart-1", "bg-chart-2", "bg-chart-3", "bg-chart-4", "bg-chart-5"];
@@ -58,18 +62,39 @@ export default function KitchenSink() {
         </div>
       </Section>
 
-      <Section title="Status ramp (the only meaningful color)">
-        <div className="flex gap-2">
-          {statuses.map((s) => (
-            <span
-              key={s.name}
-              className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface-1 px-2.5 py-0.5 text-xs text-text-2"
-            >
-              <span className={`size-1.5 rounded-full ${s.cls}`} />
-              {s.name}
-            </span>
+      <Section title="Run state — one vocabulary, one rendering each">
+        <div className="flex flex-wrap gap-2">
+          {runStates.map((s) => (
+            <Badge key={s.state} variant={s.variant}>
+              {s.state}
+            </Badge>
           ))}
+        </div>
+        <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[auto_1fr]">
+          {runStates.map((s) => (
+            <div key={s.state} className="contents">
+              <dt className="text-text-2">{s.state}</dt>
+              <dd className="text-text-3">{s.note}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="text-xs text-text-3">
+          <span className="text-text-2">stalled has no color on purpose.</span> It is absent
+          knowledge, not a fifth status — a hue would be a claim we cannot back. Absence of
+          color means absence of knowledge, and the same pill serves a provider card that
+          degraded to &ldquo;unknown&rdquo;.
+        </p>
+      </Section>
+
+      <Section title="Identity is not status">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge>default</Badge>
+          <Badge variant="secondary">secondary</Badge>
+          <Badge variant="outline">outline</Badge>
           <Badge variant="destructive">destructive</Badge>
+          <span className="text-xs text-text-3">
+            purple stays identity — never a state
+          </span>
         </div>
       </Section>
 
@@ -97,6 +122,11 @@ export default function KitchenSink() {
             failed — the reason, verbatim
           </div>
         </div>
+        <p className="text-xs text-text-3">
+          A different axis from run state above: this is what the{" "}
+          <span className="text-text-2">page</span> is doing, that is what the{" "}
+          <span className="text-text-2">data</span> says. Both appear on the same screen.
+        </p>
       </Section>
     </main>
   );
