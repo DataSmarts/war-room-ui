@@ -74,9 +74,11 @@ lives in `badge.tsx` and on `/kitchen-sink`, not in each view.
 - **`error` and `aborted_reason` are scars, not statuses.** Neither is cleared by a
   later success, and both can carry a provider's raw response body. Keep them behind a
   disclosure — never in a list cell, never in metadata, never in a log.
-- **Never render a denominator for a sweep.** There is no `batches` table; the planned
-  area count died with the session that composed the grid. "12 of 20 areas" is
-  unanswerable, so no progress bars.
+- **The run is the unit of measurement. A batch is a grouping, not a thing with
+  progress.** "Lawyers in California, top 50 neighborhoods" is composed in the operating
+  half as one query per area and lands as 50 `runs` rows sharing a `batch_id` — a uuid,
+  not a table. Group by it when a screen wants to; never render "12 of 20" or a progress
+  bar over it. There is no denominator because a batch has no size, by design.
 - A run's `running` is not a view's *loading*. One is what the data says, the other is
   what the page is doing, and both appear on the same screen.
 
