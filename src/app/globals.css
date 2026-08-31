@@ -69,6 +69,10 @@
   --input: var(--hairline);
   --ring: var(--brand);
   --radius: 0.5rem;
+
+  /* Shell geometry. One value, because the sticky bar's height and the scroll offset that
+   * keeps anchors out from under it have to agree — see the base layer below. */
+  --shell-bar-h: 3rem;
 }
 
 @theme inline {
@@ -120,6 +124,12 @@
 @layer base {
   * {
     border-color: var(--border);
+  }
+  /* This version no longer forces scroll-behavior, and it skips sticky and fixed elements
+   * when it picks a scroll target — so without this an anchored heading lands underneath
+   * the top bar. */
+  html {
+    scroll-padding-top: var(--shell-bar-h);
   }
   body {
     background: var(--background);

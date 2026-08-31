@@ -1,8 +1,9 @@
 import Link from "next/link";
 
+// The splash stands in until the sweep list exists and `/` redirects to it.
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6">
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-24">
       <h1 className="text-4xl font-semibold tracking-[0.35em] text-text-1">
         WAR<span className="text-brand">·</span>ROOM
       </h1>
@@ -13,6 +14,6 @@ export default function Home() {
       >
         kitchen sink →
       </Link>
-    </main>
+    </div>
   );
 }
