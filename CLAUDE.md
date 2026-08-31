@@ -34,6 +34,19 @@ Linear document wins.
   up. **Those tables do not exist yet** — this is the pattern, not the present tense.
 - Provider cards call the provider **live** and degrade to "unknown". They never block a
   page.
+- **A database read degrades the same way.** Anything read in a *layout* sits behind its
+  own `<Suspense>` and calls `connection()` first — without the boundary it blocks every
+  navigation, and without `connection()` it is baked into a prerender and reports the
+  moment it was built, forever. A read that fails renders `unknown` and the page renders
+  anyway. Catch and log the error's **name only**: a connection failure's message can echo
+  the URL that produced it.
+- **Loading is not unknown.** A skeleton means *still asking*; the hollow ring means
+  *asked, and could not find out*. Same distinction as a view's loading vs a run's
+  `running` — never spend one on the other.
+- **`EXPECTED_SCHEMA` in `src/lib/shell-status.ts` is what this UI was built against.**
+  Bump it in the change that adopts a migration; the top bar shows `warn` for as long as it
+  and the database's head migration disagree. That chip is the whole reason 006 granted
+  `schema_migrations`.
 - No state mutation on GET. Validate URL schemes on anything operator-edited.
 - Secrets: as many as the UI needs, provider keys included — in env, never committed,
   never logged. The blast radius is the `ui` role's grant, not the number of keys.
