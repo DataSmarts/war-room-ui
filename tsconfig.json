@@ -11,6 +11,10 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // Node's ESM resolver needs a full specifier, so the test files and `scripts/` import
+    // `./derive.ts` rather than `./derive`. Safe with `noEmit`, and confined to files bare
+    // `node` runs — application code stays extensionless.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
