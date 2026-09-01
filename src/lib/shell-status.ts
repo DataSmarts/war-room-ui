@@ -1,6 +1,4 @@
-import { connection } from "next/server";
-
-import { sql } from "./db";
+import { read } from "./db";
 
 /**
  * The migration this UI was built against.
@@ -44,14 +42,9 @@ type StatusRow = {
 };
 
 export async function shellStatus(): Promise<ShellStatus> {
-  // Without this the query runs during the prerender and the answer is frozen into the
-  // bundle. A freshness chip baked at build time reports the moment it was built, forever —
-  // which is precisely the failure the chip exists to make visible.
-  await connection();
-
-  if (!sql) return UNKNOWN;
-
-  try {
+  // `read` carries the prerender guard, the missing-URL case and the name-only error log, so this
+  // function is left with the one thing that is its own: what the two facts mean.
+  const result = await read("shell/status", async (sql) => {
     // One round trip. Both relations are whole-table grants to the `ui` role (006, 007), so
     // no column list is needed here — unlike `businesses`, where the grant is column by
     // column and `select *` is refused outright.
@@ -66,24 +59,18 @@ export async function shellStatus(): Promise<ShellStatus> {
              (select max(updated_at) from runs)                                       as runs_as_of
     `) as StatusRow[];
 
-    const row = rows[0];
-    if (!row) return UNKNOWN;
+    return rows[0] ?? null;
+  });
 
-    return {
-      freshness: row.runs_as_of
-        ? { kind: "as-of", at: row.runs_as_of }
-        : { kind: "no-runs" },
-      schema: schemaState(row.schema_version, row.schema_applied_at),
-    };
-  } catch (err) {
-    // The error's name and nothing more. A connection failure's message can echo the URL
-    // that produced it, and secrets never reach a log.
-    console.error(
-      "[shell] status read failed:",
-      err instanceof Error ? err.name : "non-error thrown",
-    );
-    return UNKNOWN;
-  }
+  if (!result.ok || !result.value) return UNKNOWN;
+  const row = result.value;
+
+  return {
+    freshness: row.runs_as_of
+      ? { kind: "as-of", at: row.runs_as_of }
+      : { kind: "no-runs" },
+    schema: schemaState(row.schema_version, row.schema_applied_at),
+  };
 }
 
 function schemaState(version: string | null, appliedAt: Date | null): SchemaState {
