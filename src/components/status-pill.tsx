@@ -49,13 +49,33 @@ export type { RunState, SweepStanding };
 
 export const RUN_STATE_ORDER: readonly RunState[] = RUN_STATE_VALUES;
 
+/**
+ * Nullable on purpose. `runStateOf` returns null for a word this build has never seen, which is
+ * schema drift rather than a sixth state — and the rendering for it is decided here, beside the
+ * vocabulary, rather than branched in each view. The sweep index already prints the same word
+ * when a batch's counts fall short of its runs; this is that word for a single row.
+ *
+ * No colour, for the reason every `unknown` in this app has none: we do not know what it means,
+ * and a hue would be a claim we cannot back.
+ */
 export function StatusPill({
   state,
   className,
 }: {
-  state: RunState;
+  state: RunState | null;
   className?: string;
 }) {
+  if (state === null) {
+    return (
+      <Badge
+        variant="unknown"
+        className={className}
+        title="the run_state view emitted a word this build does not recognise — check the schema chip"
+      >
+        unrecognised
+      </Badge>
+    );
+  }
   return (
     <Badge variant={RUN_STATES[state].variant} className={className}>
       {state}

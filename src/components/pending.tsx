@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { Disclosure, DisclosureBody } from "@/components/disclosure";
 import { cn } from "@/lib/utils";
 
 /**
@@ -106,19 +107,12 @@ export function FailedState({
     >
       <p className="text-xs font-medium text-text-2">{title}</p>
       {detail ? (
-        // Structural, not advisory: the reason can only be reached through the disclosure,
-        // so no caller can put it in a list cell or in page prose. A failure body carries a
-        // provider's raw response, which can echo the request URL — and request URLs carry
-        // keys. Redacting the string is the caller's job; keeping it folded away is this
-        // component's.
-        <details className="text-xs">
-          <summary className="cursor-pointer text-text-3 marker:text-text-3 hover:text-text-2">
-            reason
-          </summary>
-          <pre className="mt-2 max-h-48 overflow-auto rounded bg-surface-2 p-2 font-mono text-[11px] break-all whitespace-pre-wrap text-text-3">
-            {detail}
-          </pre>
-        </details>
+        // Structural, not advisory: the reason can only be reached through the disclosure, so
+        // no caller can put it in a list cell or in page prose. `Disclosure` holds the one
+        // implementation — a run's scars go through the same component, for the same reason.
+        <Disclosure summary="reason">
+          <DisclosureBody>{detail}</DisclosureBody>
+        </Disclosure>
       ) : null}
     </div>
   );
