@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { Wordmark } from "@/components/shell/top-bar";
+import { Wordmark } from "@/components/shell/sidebar";
 import { readSession, SESSION_COOKIE_NAME } from "@/lib/auth/sessions";
 import { sessionSecret, telegramTarget } from "@/lib/auth/secrets";
 

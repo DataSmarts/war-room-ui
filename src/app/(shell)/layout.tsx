@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { TopBar } from "@/components/shell/top-bar";
+import { Sidebar } from "@/components/shell/sidebar";
 import { requireSession } from "@/lib/auth/guard";
 
 /**
@@ -29,9 +29,13 @@ export default async function ShellLayout({
   await requireSession();
 
   return (
-    <div className="flex flex-1 flex-col">
-      <TopBar />
-      <main className="flex-1">{children}</main>
+    // The rail is fixed-width and the main column takes the rest. `min-w-0` on the column is
+    // load-bearing: without it a dense table's intrinsic width wins the flex negotiation and
+    // pushes the whole page into a horizontal scroll instead of scrolling inside its own
+    // container.
+    <div className="flex flex-1">
+      <Sidebar />
+      <main className="min-w-0 flex-1">{children}</main>
     </div>
   );
 }

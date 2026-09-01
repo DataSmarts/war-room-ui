@@ -27,7 +27,10 @@ export function DetailLayout({
         <div className="min-w-0 p-4">{children}</div>
         <aside
           aria-label="Detail"
-          className="border-t border-hairline p-4 @4xl:sticky @4xl:top-[var(--shell-bar-h)] @4xl:max-h-[calc(100dvh-var(--shell-bar-h))] @4xl:overflow-y-auto @4xl:border-t-0 @4xl:border-l"
+          // Sticks to the top of the viewport, not below a bar: the shell's chrome is a left
+          // rail now, so there is nothing overhead to clear and the full height is the rail's
+          // to use.
+          className="border-t border-hairline p-4 @4xl:sticky @4xl:top-0 @4xl:max-h-dvh @4xl:overflow-y-auto @4xl:border-t-0 @4xl:border-l"
         >
           {rail}
         </aside>

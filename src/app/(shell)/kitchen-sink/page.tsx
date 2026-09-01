@@ -70,10 +70,9 @@ import {
 import { NavLinksView } from "@/components/shell/nav-links";
 import { PageHeader } from "@/components/shell/page-header";
 import {
-  KitchenSinkLink,
-  NavSkeleton,
-  TopBarChrome,
-} from "@/components/shell/top-bar";
+  SidebarChrome,
+  SidebarFooter,
+} from "@/components/shell/sidebar";
 import {
   RUN_STATES,
   RunState,
@@ -794,89 +793,86 @@ export default function KitchenSink() {
           </p>
         </Section>
 
-        <Section title="Shell — the top bar">
-          <div className="space-y-4">
-            <Frame label="a route is active — purple appears exactly once">
-              <TopBarChrome
-                className="static"
+        <Section title="Shell — the left rail">
+          <div className="flex flex-wrap gap-4">
+            <Frame label="a module is active — purple appears exactly once" className="h-[26rem]">
+              <SidebarChrome
+                className="h-full"
                 nav={<NavLinksView pathname="/sweeps" />}
-                end={
+                standing={
                   <>
-                    <ChipsView
-                      freshness={{ kind: "as-of", at: recently }}
-                      schema={{
-                        kind: "match",
-                        version: EXPECTED_SCHEMA,
-                        appliedAt: recently,
-                      }}
-                    />
-                    <KitchenSinkLink />
+                    <div className="flex flex-col items-start gap-1.5 px-1.5">
+                      <ChipsView
+                        freshness={{ kind: "as-of", at: recently }}
+                        schema={{ kind: "match", version: EXPECTED_SCHEMA, appliedAt: recently }}
+                      />
+                    </div>
+                    <SidebarFooter />
                   </>
                 }
               />
             </Frame>
 
-            <Frame label="no active route — this page. `/` redirects to /sweeps.">
-              <TopBarChrome
-                className="static"
+            <Frame label="no active module — this page. `/` redirects to /sweeps." className="h-[26rem]">
+              <SidebarChrome
+                className="h-full"
                 nav={<NavLinksView pathname="/kitchen-sink" />}
-                end={
+                standing={
                   <>
-                    <ChipsView
-                      freshness={{ kind: "as-of", at: recently }}
-                      schema={{
-                        kind: "match",
-                        version: EXPECTED_SCHEMA,
-                        appliedAt: recently,
-                      }}
-                    />
-                    <KitchenSinkLink />
+                    <div className="flex flex-col items-start gap-1.5 px-1.5">
+                      <ChipsView
+                        freshness={{ kind: "as-of", at: recently }}
+                        schema={{ kind: "match", version: EXPECTED_SCHEMA, appliedAt: recently }}
+                      />
+                    </div>
+                    <SidebarFooter />
                   </>
                 }
               />
             </Frame>
 
-            <Frame label="the nav before it hydrates">
-              <TopBarChrome
-                className="static"
-                nav={<NavSkeleton />}
-                end={
-                  <>
-                    <ChipsSkeleton />
-                    <KitchenSinkLink />
-                  </>
-                }
-              />
-            </Frame>
-
-            <Frame
-              label="narrow — it stacks and scrolls. No menu, no toggle, no JavaScript."
-              className="max-w-xs"
-            >
-              <TopBarChrome
-                className="static"
+            <Frame label="the standing block before it answers" className="h-[26rem]">
+              <SidebarChrome
+                className="h-full"
                 nav={<NavLinksView pathname="/businesses" />}
-                end={
+                standing={
                   <>
-                    <ChipsView
-                      freshness={{ kind: "as-of", at: recently }}
-                      schema={{
-                        kind: "match",
-                        version: EXPECTED_SCHEMA,
-                        appliedAt: recently,
-                      }}
-                    />
-                    <KitchenSinkLink />
+                    <div className="flex flex-col items-start gap-1.5 px-1.5">
+                      <ChipsSkeleton />
+                    </div>
+                    <SidebarFooter />
+                  </>
+                }
+              />
+            </Frame>
+
+            <Frame label="the database could not be reached" className="h-[26rem]">
+              <SidebarChrome
+                className="h-full"
+                nav={<NavLinksView pathname="/sweeps" />}
+                standing={
+                  <>
+                    <div className="flex flex-col items-start gap-1.5 px-1.5">
+                      <ChipsView
+                        freshness={{ kind: "unknown" }}
+                        schema={{ kind: "unknown" }}
+                      />
+                    </div>
+                    <SidebarFooter />
                   </>
                 }
               />
             </Frame>
           </div>
-          <p className="text-xs text-text-3">
-            The narrow frame above is the{" "}
-            <span className="text-text-2">real</span> narrow layout, not a picture
-            of one: the bar responds to the width of its container, so a 20rem box
-            reproduces a 20rem screen.
+          <p className="max-w-prose text-xs text-text-3">
+            A left rail rather than a top bar, because this app is a set of views over one
+            system and only a rail can say so on every screen — five modules and a standing
+            block do not fit across the top without becoming a second navigation problem. It
+            costs the dense table nothing a full-width bar was not already taking, and the
+            right-hand detail rail is unaffected.{" "}
+            <span className="text-text-2">Planned modules are drawn as planned</span>: &ldquo;not
+            built&rdquo; is a different fact from &ldquo;empty&rdquo;, so they are named, dimmed,
+            and not links — never a nav that implies discovery is the whole system.
           </p>
         </Section>
 
