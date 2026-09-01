@@ -195,6 +195,104 @@ export function checkState(checkedAt: Date | null, found: boolean): CheckState {
 }
 
 /**
+ * Trap §5.12 — a scar can carry the key that produced it.
+ *
+ * `runs.error` is `HTTP <code>: <the provider's response body>`. A Google error body can echo
+ * the request URL back, and request URLs carry `key=`. `aborted_reason` inherits the same
+ * hazard. Both columns are readable by the `ui` role in full, so anything that renders them
+ * has to strip first.
+ *
+ * **This is the second layer, not the first.** `places_sweep.py` redacts `key=` and `AIza…` at
+ * the only place either column is written. This one exists anyway, for three reasons that are
+ * not going away: rows written before that regex still sit in the table, its two patterns do
+ * not cover every shape a credential takes, and a public repo cannot make a safety claim that
+ * rests on a private repo's regex. Two independent layers, and neither is allowed to assume
+ * the other ran.
+ */
+const SECRET_PATTERNS: ReadonlyArray<{ find: RegExp; replace: string }> = [
+  // A credential in a query string or a form body. The parameter name survives, so the shape of
+  // the error is still readable — "the URL had a key in it" is itself information.
+  //
+  // The lookahead skips a value that is already the placeholder. Without it this pattern matches
+  // its own output — `[redacted]` holds no `&`, space, quote or bracket — which would make
+  // redaction non-idempotent and, worse, make `containsSecret` report every safe string as
+  // unsafe. The canary has to be able to tell a stripped body from an unstripped one.
+  {
+    find: /\b(key|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|token|secret|password|signature)=(?!\[redacted\])[^&\s"'<>]+/gi,
+    replace: "$1=[redacted]",
+  },
+  // An Authorization header, quoted back inside a body.
+  { find: /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, replace: "$1 [redacted]" },
+  // A Google API key with nothing around it to name it.
+  { find: /\bAIza[0-9A-Za-z_-]{20,}/g, replace: "[redacted]" },
+];
+
+export function redactSecrets(text: string): string {
+  return SECRET_PATTERNS.reduce(
+    (out, { find, replace }) => out.replace(find, replace),
+    text,
+  );
+}
+
+/** How much of a scar reaches the screen. The column holds up to 2000. */
+export const SCAR_DISPLAY_MAX = 1000;
+
+/** A scar, safe to render — and honest about what was left out. */
+export type Scar = {
+  text: string;
+  /** The original length, before truncation. Rendered, so a cut is never silent. */
+  ofChars: number;
+  truncated: boolean;
+};
+
+const PLACEHOLDER = "[redacted]";
+
+/**
+ * A cut can land inside the placeholder redaction just inserted, leaving `key=[redac` on screen.
+ * That fragment is not a secret, but it is also not a word — and it defeats any check that asks
+ * "does this string still look like it has a credential in it", because `[redac` is a perfectly
+ * good value as far as a regex is concerned. Drop the fragment rather than reason about it.
+ */
+function dropPartialPlaceholder(text: string): string {
+  const start = text.lastIndexOf("[");
+  if (start === -1) return text;
+  const tail = text.slice(start);
+  return tail.length < PLACEHOLDER.length && PLACEHOLDER.startsWith(tail)
+    ? text.slice(0, start)
+    : text;
+}
+
+/**
+ * Redact, **then** truncate — the order matters and is the same one `places_sweep.py.finish`
+ * keeps. Truncating first can sever a key mid-string and leave the surviving half on screen,
+ * which is the one failure mode where doing less work would have been safer.
+ *
+ * `ofChars` is the length *after* redaction and before the cut, so the rail can say how much it
+ * is not showing. Never the raw length: that would report a number for a string this function
+ * deliberately never produced.
+ */
+export function readScar(text: string): Scar {
+  const redacted = redactSecrets(text);
+  const truncated = redacted.length > SCAR_DISPLAY_MAX;
+  return {
+    text: truncated
+      ? dropPartialPlaceholder(redacted.slice(0, SCAR_DISPLAY_MAX))
+      : redacted,
+    ofChars: redacted.length,
+    truncated,
+  };
+}
+
+/** Exported for the test that runs every rendering back through the patterns. */
+export function containsSecret(text: string): boolean {
+  return SECRET_PATTERNS.some(({ find }) => {
+    // `g` regexes carry `lastIndex` between calls; a fresh one cannot report a stale position.
+    const probe = new RegExp(find.source, find.flags.replace("g", ""));
+    return probe.test(text);
+  });
+}
+
+/**
  * Every id in this schema is a uuid, and one that arrived from a URL might not be.
  *
  * The point is not injection — ids reach Postgres as bound parameters. It is that Postgres

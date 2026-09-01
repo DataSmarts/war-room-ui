@@ -3,11 +3,15 @@ import { test } from "node:test";
 
 import {
   checkState,
+  containsSecret,
   isUuid,
   PLACES_TEXT_SEARCH_CAP,
+  readScar,
+  redactSecrets,
   resultCount,
   RUN_STATE_VALUES,
   runStateOf,
+  SCAR_DISPLAY_MAX,
   SWEEP_STANDING_VALUES,
   sweepStanding,
   webPresence,
@@ -267,6 +271,90 @@ test("checkState keeps 'never looked' and 'looked, found nobody' apart", () => {
   for (const { checkedAt, found, expected, why } of CHECK_STATE_CASES) {
     assert.equal(checkState(checkedAt, found), expected, `${checkedAt} / ${found} — ${why}`);
   }
+});
+
+// --- redactSecrets / readScar ------------------------------------------------------------------
+
+/**
+ * Every key below is visibly fake and none has ever been a credential. They are here because a
+ * redaction with no unsafe input to chew on proves nothing — and because this repo is public,
+ * which is the whole reason the function exists.
+ */
+const FAKE_KEY = "AIzaSyFAKE0000000000000000000000000000";
+
+const REDACTION_CASES: ReadonlyArray<{
+  input: string;
+  expected: string;
+  why: string;
+}> = [
+  {
+    // The case the issue names.
+    input: `HTTP 400: {"error":{"message":"Bad request","url":"https://places.googleapis.com/v1/places:searchText?key=${FAKE_KEY}&fields=id"}}`,
+    expected:
+      'HTTP 400: {"error":{"message":"Bad request","url":"https://places.googleapis.com/v1/places:searchText?key=[redacted]&fields=id"}}',
+    why: "a body echoing the request URL — the leak §5.12 is about",
+  },
+  {
+    input: `Denied for ${FAKE_KEY}`,
+    expected: "Denied for [redacted]",
+    why: "a bare Google key with nothing around it to name it",
+  },
+  {
+    input: "HTTP 401: {\"detail\":\"Authorization: Bearer sk-abcdef0123456789 rejected\"}",
+    expected: 'HTTP 401: {"detail":"Authorization: Bearer [redacted] rejected"}',
+    why: "an auth header quoted back inside a body",
+  },
+  {
+    input: "GET /v1/x?api_key=abc123&access_token=def456&page=2",
+    expected: "GET /v1/x?api_key=[redacted]&access_token=[redacted]&page=2",
+    why: "every credential parameter, and `page` is not one",
+  },
+  {
+    // The one scar actually in the database, in shape.
+    input: 'HTTP 503: {\n  "error": {\n    "code": 503,\n    "message": "The service is unavailable."\n  }\n}',
+    expected: 'HTTP 503: {\n  "error": {\n    "code": 503,\n    "message": "The service is unavailable."\n  }\n}',
+    why: "nothing sensitive — an untouched body stays readable, which is the point of redacting rather than hiding",
+  },
+  {
+    input: "key=[redacted] already",
+    expected: "key=[redacted] already",
+    why: "idempotent — a second pass must not eat its own placeholder",
+  },
+];
+
+test("redactSecrets strips the credential and keeps the error", () => {
+  for (const { input, expected, why } of REDACTION_CASES) {
+    assert.equal(redactSecrets(input), expected, why);
+  }
+});
+
+test("nothing that looks like a secret survives a redaction", () => {
+  // The canary. If the writing tool ever learns a pattern this file does not, the leak shows up
+  // here as a failing test rather than on a public deploy.
+  for (const { input, why } of REDACTION_CASES) {
+    assert.equal(containsSecret(redactSecrets(input)), false, why);
+  }
+  assert.equal(containsSecret(`?key=${FAKE_KEY}`), true, "the canary can still see an unstripped key");
+});
+
+test("readScar redacts before it truncates, and says what it cut", () => {
+  const short = readScar("HTTP 503: the service is unavailable");
+  assert.equal(short.truncated, false);
+  assert.equal(short.ofChars, 36);
+
+  // The key sits astride the cut. Truncating first would sever it and leave the front half on
+  // screen; redacting first removes it whole and the truncation lands on safe text.
+  const padded = `${"x".repeat(SCAR_DISPLAY_MAX - 10)}?key=${FAKE_KEY}&page=2${"y".repeat(500)}`;
+  const long = readScar(padded);
+  assert.equal(long.truncated, true);
+  assert.ok(long.text.length <= SCAR_DISPLAY_MAX, "never longer than the cap");
+  assert.ok(long.ofChars > SCAR_DISPLAY_MAX, "the original length is reported, not the cut one");
+  assert.equal(containsSecret(long.text), false, "no half-key survives the cut");
+  assert.ok(!long.text.includes("AIzaSy"), "not even the beginning of one");
+  assert.ok(
+    !/\[r(e(d(a(c(t(e(d)?)?)?)?)?)?)?$/.test(long.text),
+    "and no half-placeholder either — the cut drops the fragment it made",
+  );
 });
 
 // --- isUuid ----------------------------------------------------------------------------------

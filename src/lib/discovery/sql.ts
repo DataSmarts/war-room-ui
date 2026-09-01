@@ -316,3 +316,45 @@ export async function selectRun(sql: Sql, runId: string): Promise<RunRow | null>
   const row = raw[0];
   return row ? toRunRow(row) : null;
 }
+
+// --- scars -----------------------------------------------------------------------------------
+
+/**
+ * **The only statement in this repo that names `runs.error` or `runs.aborted_reason`.**
+ *
+ * Everything above returns `has_error` / `has_aborted_reason` as booleans, and that is not
+ * squeamishness — it is the mechanism. A list query that cannot select the column cannot leak it
+ * into a cell, a log line or a metadata blob, whatever a future view does with the row. Reading
+ * the text is a different question asked deliberately, about one run, by a caller that has
+ * somewhere safe to put the answer.
+ *
+ * So this is a separate door rather than four more columns on `RUN_COLUMNS`. Keep it that way:
+ * the moment either name appears in a statement that returns many rows, the guarantee is gone
+ * and nothing in the type system will say so.
+ *
+ * What comes back is raw. `readScar` in `derive.ts` is what makes it renderable, and the caller
+ * is required to use it — a Google error body can echo the request URL, and request URLs carry
+ * `key=` (§5.12).
+ */
+const RUN_SCARS_SQL = `
+select r.error          as error,
+       r.aborted_reason as aborted_reason
+from runs r
+where r.id = $1
+limit 1
+`;
+
+/** Raw, unredacted, straight from the column. Never render this without `readScar`. */
+export type RunScars = { error: string | null; abortedReason: string | null };
+
+export async function selectRunScars(
+  sql: Sql,
+  runId: string,
+): Promise<RunScars | null> {
+  const raw = (await sql.query(RUN_SCARS_SQL, [runId])) as {
+    error: string | null;
+    aborted_reason: string | null;
+  }[];
+  const row = raw[0];
+  return row ? { error: row.error, abortedReason: row.aborted_reason } : null;
+}

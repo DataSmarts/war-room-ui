@@ -1,7 +1,12 @@
 import { neon } from "@neondatabase/serverless";
 import env from "@next/env";
 
-import { RUN_STATE_VALUES, runStateOf } from "../src/lib/discovery/derive.ts";
+import {
+  containsSecret,
+  readScar,
+  RUN_STATE_VALUES,
+  runStateOf,
+} from "../src/lib/discovery/derive.ts";
 import {
   READ_MODEL,
   UNGRANTED,
@@ -11,6 +16,7 @@ import {
 } from "../src/lib/discovery/schema.ts";
 import {
   selectRun,
+  selectRunScars,
   selectSweepRuns,
   selectSweeps,
 } from "../src/lib/discovery/sql.ts";
@@ -355,6 +361,23 @@ if ((predicates?.view_nulls ?? 0) > 0 || (predicates?.accounting_nulls ?? 0) > 0
 
 heading("read-through — the real statements, the real mapping");
 
+/** The first run in any sweep that carries a scar, found through the statements a page uses. */
+async function findScarredRun(
+  db: typeof sql,
+  rows: Awaited<ReturnType<typeof selectSweeps>>["rows"],
+) {
+  for (const row of rows) {
+    const inSweep = row.batchId
+      ? (await selectSweepRuns(db, row.batchId)).rows
+      : row.runId
+        ? [(await selectRun(db, row.runId))!]
+        : [];
+    const hit = inSweep.find((r) => r.hasError || r.hasAbortedReason);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 const sweeps = await selectSweeps(sql);
 
 if (sweeps.rows.length === 0) {
@@ -401,6 +424,43 @@ if (sweeps.rows.length === 0) {
       pass(
         `${runs.total} run(s) typed; states narrowed; results read as ${[...shapes].join(", ")}`,
       );
+    }
+
+    // The scar door. Proving the `ui` role can read `error` and `aborted_reason` matters — the
+    // rail is useless otherwise — but this script must never become the thing that copies a
+    // provider's response body into a terminal. So it asserts the SHAPE and reports lengths,
+    // and never prints a character of what it read.
+    //
+    // Every sweep, not just the newest: scars are rare, and a check that only looks where they
+    // happen not to be reports "untested" while the one row that would exercise it sits two
+    // sweeps down.
+    const scarred = await findScarredRun(sql, sweeps.rows);
+    if (!scarred) {
+      note("no run carries a scar — selectRunScars is untested, not proven");
+    } else {
+      const scars = await selectRunScars(sql, scarred.runId);
+      if (!scars) {
+        fail("a run reporting a scar returned no row from selectRunScars");
+      } else {
+        const wrongShape = (["error", "abortedReason"] as const).filter(
+          (k) => scars[k] !== null && typeof scars[k] !== "string",
+        );
+        const present = scarred.hasError && scars.error === null;
+        if (wrongShape.length > 0) {
+          fail(`scar columns came back as ${wrongShape.map((k) => typeof scars[k]).join(", ")}`);
+        } else if (present) {
+          fail("a run reporting has_error returned a null error — the two statements disagree");
+        } else {
+          const shown = readScar(scars.error ?? scars.abortedReason ?? "");
+          pass(
+            `scar readable as ui, ${shown.ofChars} chars after redaction` +
+              (containsSecret(shown.text) ? " — BUT A SECRET SURVIVED" : ", nothing secret left"),
+          );
+          if (containsSecret(shown.text)) {
+            fail("redactSecrets left something that still matches a credential pattern");
+          }
+        }
+      }
     }
   }
 }

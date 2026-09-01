@@ -5,10 +5,12 @@ import { read, type Read } from "@/lib/db";
 import { isUuid } from "./derive";
 import {
   selectRun,
+  selectRunScars,
   selectSweepRuns,
   selectSweeps,
   type Page,
   type RunRow,
+  type RunScars,
   type SweepRow,
 } from "./sql";
 
@@ -24,7 +26,7 @@ import {
  * that only makes sense inside Next.
  */
 
-export type { Page, RunRow, SweepRow };
+export type { Page, RunRow, RunScars, SweepRow };
 
 /**
  * An id out of a URL that is not a uuid is a **not-found**, never an unknown.
@@ -59,5 +61,19 @@ export const getRun = cache(
   async (runId: string): Promise<Read<RunRow | null>> => {
     if (!isUuid(runId)) return { ok: true, value: null };
     return read("discovery/run", (sql) => selectRun(sql, runId));
+  },
+);
+
+/**
+ * One run's scars, **raw** — asked for separately because reading them is a separate decision.
+ *
+ * Issued only when a rail has a run selected, so the ordinary path down this page never fetches
+ * a provider's response body at all. What comes back is unredacted; `readScar` is what makes it
+ * renderable, and nothing may put this string on a page without it.
+ */
+export const getRunScars = cache(
+  async (runId: string): Promise<Read<RunScars | null>> => {
+    if (!isUuid(runId)) return { ok: true, value: null };
+    return read("discovery/run-scars", (sql) => selectRunScars(sql, runId));
   },
 );
