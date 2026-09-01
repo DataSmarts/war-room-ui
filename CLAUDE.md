@@ -81,9 +81,10 @@ lives in `badge.tsx` and on `/kitchen-sink`, not in each view.
   wording is off — check the query text before blaming the area.
 - **Three states, not two.** `website_uri` set with `website_domain` null is a
   shared-platform presence (linktr.ee, a Facebook page), not "no website".
-  `socials_checked_at` / `contacts_checked_at` set with nothing found renders
-  **"none confirmed"**, never "none" — "never looked" and "looked, found nobody" are
-  different facts, and the schema keeps them apart on purpose.
+  `socials_checked_at` set with all four URLs null renders **"none confirmed"**, never
+  "none" — "never looked" and "looked, found nobody" are different facts, and the schema
+  keeps them apart on purpose. **`contacts_checked_at` is the exception, and not by
+  choice**: see `contactsCheck` below.
 - **`error` and `aborted_reason` are scars, not statuses.** Neither is cleared by a
   later success, and both can carry a provider's raw response body. Keep them behind a
   disclosure — never in a list cell, never in metadata, never in a log.
@@ -135,6 +136,51 @@ numbers precisely so it does not have to hold an opinion. That opinion is made o
   falls into none of the five, so the row prints `1 unrecognised` and the standing drops to
   `unknown` — never a row that reads as complete while it is short by one.
 
+## A business's facts — four readings, and not one of them a status
+
+`/businesses` is the other half of discovery: not what was asked, but what came back. Four
+readings, each decided once in `derive.ts` and paired with a rendering once in
+`business-facts.tsx` — the same two-file split `run_state` and `sweepStanding` keep, for the
+same reason. **No view re-derives one and no view invents a word for one.**
+
+| reading | values | renders as |
+| -- | -- | -- |
+| `webPresence` | `site` · `off-platform` · `none` | the domain · the URL + `elsewhere` · `no site` |
+| `checkState` (socials) | `found` · `none-confirmed` · `never-looked` | the platforms · `none confirmed` · **hollow** |
+| `contactsCheck` | `checked` · `never-looked` | `checked <when>` · **hollow** |
+| `ratingReading` | `rated` · `thin` · `unrated` | `4.8 · 214 reviews` · dimmed + `thin` · **hollow** |
+
+- **None of these is a status, so none of them gets a colour.** Purple is identity,
+  ok/warn/fail/info is severity, and "this business has no website" is neither — what
+  separates them is weight and glyph. The hollow ring appears exactly three times and
+  **never on a fact**: `never looked` (socials), `never looked` (contacts), `never rated`.
+  `no site` and `none confirmed` are plain text, because somebody looked.
+- **Contacts is two states, not three, and the grant is why.** `contacts` is ungranted to
+  the `ui` role (§6) — it holds decision-makers' names and addresses, and the deploy is a
+  public URL until the login lands. So the column answers *were they looked for*, never
+  *were any found*. **Do not "unify" it by calling `checkState(checkedAt, false)`**: that
+  would render 712 live businesses as "none confirmed" from code that cannot see whether
+  anyone was found. A test asserts the two functions disagree on a checked business.
+- **A rating is never drawn as a shape.** No stars, no bar, no meter, for either kind — a
+  filled shape is a confidence claim. `RATING_CONFIDENCE_MIN` is 10, and it is *ours*, not
+  Google's: probe the boundary in tests, never assert the number the way
+  `PLACES_TEXT_SEARCH_CAP` is asserted. 188 live businesses are 5.0 on under ten reviews.
+- **`website_domain` is never recomputed here.** The shared-platform host list lives in the
+  operating half and has already outgrown what the reference documents; a domain parsed in
+  this repo would disagree with the column beside it.
+- **Every provider URL becomes an `href` only through `httpHref`** — an allowlist of
+  `http:`/`https:`, because a browser strips tabs out of a scheme and any denylist loses.
+  Five columns are provider-supplied (`website_uri` + four socials). A rejected URL is still
+  *shown*; it is just not clickable.
+- **The `web` and `socials` filter predicates in `BUSINESSES_SQL` are those two functions
+  transcribed into SQL** — the one duplicated decision in the repo, because 1416 rows are
+  narrowed in the database. It cannot be designed away, so `schema:check` proves the two
+  agree on live rows for every value of both vocabularies, and a drift refuses the push.
+- **Zero sightings is a real answer, not a broken row.** 293 live businesses have no
+  `run_businesses` link at all — they were written before the first run existed. §3.4's
+  `sum(businesses_new) = count(businesses)` holds over the businesses *discovery* created,
+  not over the table.
+
 ## Design language (enforced by `src/app/globals.css` — read it)
 
 - Dark-first, dark-only for now. Near-black base, elevated surfaces one notch
@@ -175,6 +221,18 @@ numbers precisely so it does not have to hold an opinion. That opinion is made o
   success. That is the same collapse `isUuid` exists to prevent. The loading state moves to
   whatever on the page has its own read; there is a `not-found.tsx` so the 404 renders inside
   the shell rather than as Next's OS-themed default.
+- **A query parameter is not the route's subject, and the rule above does not reach it.**
+  `/businesses?business=<id>` streams behind `<Suspense>` and **never calls `notFound()`**:
+  the page is the list, the id is a selection beside it, and a stale one is a fact about the
+  rail. It degrades to `RailNotFound` with the table intact and the response honestly 200.
+  Read the two rules together — the question is always *what is this page about*, never
+  *where did the id come from*.
+- **Filters live in the URL and narrow in the database.** They are links, not a form, for
+  any fixed vocabulary — a row of links shows all three states at once, which is the thing
+  a three-state vocabulary exists to teach. Selection rides through every one of them:
+  narrowing the list and picking a row are different questions, so the rail reads its
+  subject by id and stays open while the table moves. Every list still `LIMIT`s and still
+  says "showing N of M" (§9).
 - Keep it small. This app looks at things; the thinking happens elsewhere.
 
 @AGENTS.md

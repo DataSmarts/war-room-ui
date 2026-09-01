@@ -1,11 +1,22 @@
 import type { NeonQueryFunction } from "@neondatabase/serverless";
 
 import {
+  CHECK_STATE_VALUES,
   PLACES_TEXT_SEARCH_CAP,
+  checkState,
+  contactsCheck,
+  isUuid,
+  ratingReading,
   resultCount,
   runStateOf,
+  WEB_PRESENCE_VALUES,
+  webPresence,
+  type CheckState,
+  type ContactsCheck,
+  type RatingReading,
   type ResultCount,
   type RunState,
+  type WebPresence,
 } from "./derive.ts";
 
 /**
@@ -27,12 +38,12 @@ import {
  * * **Every count is cast `::int`** (§5.8). The view's counts are `bigint` and the driver hands
  *   those back as strings. `(agg)::int` is parenthesised because `count(*) filter (…)::int` does
  *   not parse.
- * * **Neither statement selects `runs.error` or `runs.aborted_reason`** (§5.12). Both embed a
+ * * **No list statement selects `runs.error` or `runs.aborted_reason`** (§5.12). Both embed a
  *   provider's response body, and a Google error body can echo a request URL — request URLs carry
  *   `key=`. What comes back is whether a scar exists, never its text. A list query that cannot
  *   select the column cannot leak it into a cell, a log line or a metadata blob, whatever a
  *   future view does with the row. Reading the text itself, redacted and behind a disclosure, is
- *   its own slice.
+ *   its own slice, and `selectRunScars` at the bottom of this file is the whole of it.
  */
 
 type Sql = NeonQueryFunction<false, false>;
@@ -357,4 +368,401 @@ export async function selectRunScars(
   }[];
   const row = raw[0];
   return row ? { error: row.error, abortedReason: row.aborted_reason } : null;
+}
+
+// --- businesses ------------------------------------------------------------------------------
+
+/**
+ * The other half of discovery: not what we asked, but what came back.
+ *
+ * `select *` is not an option here and would not work if it were — the `ui` role is granted
+ * `businesses` **column by column**, 20 of 23, and the three it withholds are the raw provider
+ * payloads (`places_raw`, `socials_raw`, `contacts_raw`) that carry PII (§6). A star would be
+ * refused by the database. Listing the columns is not a style preference; it is the shape of the
+ * grant, written down.
+ *
+ * `sightings` is a correlated subquery rather than a join so a business twelve areas returned
+ * stays one row. `run_businesses(business_id)` is indexed (§9).
+ */
+const BUSINESS_COLUMNS = `
+       b.id                                                             as id,
+       b.google_place_id                                                as google_place_id,
+       b.name                                                           as name,
+       b.website_uri                                                    as website_uri,
+       b.website_domain                                                 as website_domain,
+       b.formatted_address                                              as formatted_address,
+       b.national_phone                                                 as national_phone,
+       b.international_phone                                            as international_phone,
+       b.rating                                                         as rating,
+       b.user_rating_count                                              as user_rating_count,
+       b.facebook_url                                                   as facebook_url,
+       b.instagram_url                                                  as instagram_url,
+       b.x_url                                                          as x_url,
+       b.linkedin_url                                                   as linkedin_url,
+       b.socials_checked_at                                             as socials_checked_at,
+       b.contacts_checked_at                                            as contacts_checked_at,
+       b.created_at                                                     as created_at,
+       b.updated_at                                                     as updated_at,
+       (select count(*) from run_businesses rb
+         where rb.business_id = b.id)::int                              as sightings,
+       (count(*) over ())::int                                          as total_businesses
+from businesses b
+`;
+
+/**
+ * Every filter is a nullable parameter, and the statement is one static string.
+ *
+ * Not a WHERE clause assembled from parts: a static statement has no concatenation to get wrong,
+ * one plan to reason about, and it is the same text whether five filters are set or none. Values
+ * reach Postgres bound, never interpolated.
+ *
+ * **The `web` and `socials` predicates are `webPresence` and `checkState` transcribed into SQL,**
+ * and that duplication is the one real hazard in this file — a filter that disagrees with the
+ * cell it filters on is invisible until someone counts. `schema:check` asserts the two agree on
+ * live rows for every value of both vocabularies, so a drift refuses a push rather than shipping.
+ * Note especially that `found` outranks the timestamp in both: a business holding a Facebook URL
+ * reads `found` whatever `socials_checked_at` says, so `never-looked` has to exclude it here too.
+ *
+ * The sweep filter takes a `batch_id` **or** a `run_id`, the same either/or `/sweeps/<id>`
+ * answers, so a sweep can link straight to what it found.
+ */
+const BUSINESSES_SQL = `
+select ${BUSINESS_COLUMNS}
+where ($1::text is null or b.name ilike '%' || $1::text || '%')
+  and ($2::text is null
+       or ($2 = 'site'         and b.website_domain is not null)
+       or ($2 = 'off-platform' and b.website_uri is not null and b.website_domain is null)
+       or ($2 = 'none'         and b.website_uri is null))
+  and ($3::text is null
+       or ($3 = 'found'
+           and num_nonnulls(b.facebook_url, b.instagram_url, b.x_url, b.linkedin_url) > 0)
+       or ($3 = 'none-confirmed'
+           and b.socials_checked_at is not null
+           and num_nonnulls(b.facebook_url, b.instagram_url, b.x_url, b.linkedin_url) = 0)
+       or ($3 = 'never-looked'
+           and b.socials_checked_at is null
+           and num_nonnulls(b.facebook_url, b.instagram_url, b.x_url, b.linkedin_url) = 0))
+  and ($4::uuid is null or exists (
+        select 1 from run_businesses rb
+        join runs r on r.id = rb.run_id
+        where rb.business_id = b.id and (r.batch_id = $4::uuid or r.id = $4::uuid)))
+  and ($5::text is null or exists (
+        select 1 from run_businesses rb
+        join runs r on r.id = rb.run_id
+        where rb.business_id = b.id and r.city = $5::text))
+order by b.name asc, b.id asc
+limit $6
+`;
+
+/** One business, by id. No filters: a rail's subject is not part of the list's question. */
+const BUSINESS_BY_ID_SQL = `select ${BUSINESS_COLUMNS} where b.id = $1 limit 1`;
+
+/** The city list the filter offers. Two values today; it is the sweeps that grow it. */
+const DISCOVERY_CITIES_SQL = `
+select distinct r.city as city
+from runs r
+where r.city is not null
+order by 1 asc
+`;
+
+/**
+ * What the list is asking for. Every field nullable: null is "do not filter on this".
+ *
+ * `q` is held exactly as it was typed so the form can render it back. The ILIKE escaping happens
+ * at the bind, not here — a `%` the operator typed is a percent sign they are searching for, and
+ * a filter that quietly turned it into a wildcard would return rows nobody asked about.
+ */
+export type BusinessFilters = {
+  q: string | null;
+  web: WebPresence | null;
+  socials: CheckState | null;
+  /** A `batch_id` or a `run_id`. */
+  sweep: string | null;
+  city: string | null;
+};
+
+export const NO_BUSINESS_FILTERS: BusinessFilters = {
+  q: null,
+  web: null,
+  socials: null,
+  sweep: null,
+  city: null,
+};
+
+export function hasBusinessFilter(filters: BusinessFilters): boolean {
+  return Object.values(filters).some((value) => value !== null);
+}
+
+/** A repeated or absent param, as `searchParams` hands it over. */
+type ParamValue = string | string[] | undefined;
+
+function one(value: ParamValue): string | null {
+  // A repeated param is ambiguous — `?web=site&web=none` asks for two answers to one question.
+  // Ignoring it filters nothing, which is what the control will show.
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed === "" ? null : trimmed;
+}
+
+function member<T extends string>(value: ParamValue, allowed: readonly T[]): T | null {
+  const raw = one(value);
+  return raw !== null && (allowed as readonly string[]).includes(raw) ? (raw as T) : null;
+}
+
+/**
+ * A URL, narrowed to the five questions this list can answer.
+ *
+ * Anything unrecognised becomes null rather than an error: `?web=purple` names an axis that
+ * exists and a value that does not, and the honest response is to filter nothing and let the
+ * control show "any" — the page has not lost the ability to answer, only the instruction.
+ *
+ * `sweep` is shape-checked because a malformed uuid is a Postgres error, `read` reports errors as
+ * *unknown*, and "we could not find out" is the wrong answer to a question that was never
+ * askable (the same reason `isUuid` guards the id routes). A well-formed uuid naming no sweep is
+ * a different matter and stays a filter: it matches nothing, and "nothing matched" is true.
+ *
+ * `city` is not validated, because it is data rather than a vocabulary — an unknown city matches
+ * nothing, which is the same honest answer.
+ */
+export function parseBusinessFilters(
+  params: Record<string, ParamValue>,
+): BusinessFilters {
+  const sweep = one(params.sweep);
+  return {
+    q: one(params.q),
+    web: member(params.web, WEB_PRESENCE_VALUES),
+    socials: member(params.socials, CHECK_STATE_VALUES),
+    sweep: sweep !== null && isUuid(sweep) ? sweep : null,
+    city: one(params.city),
+  };
+}
+
+/**
+ * The inverse of `parseBusinessFilters`, and it lives beside it so the two cannot drift.
+ *
+ * Every link on the page rebuilds the query string from the parsed filters rather than passing
+ * the original through: a value this build does not recognise was dropped at the parse, and
+ * carrying it along in every href would keep a filter alive in the URL that is not being applied
+ * to the rows. What the address bar says and what the table did stay the same thing.
+ */
+export function businessFilterParams(filters: BusinessFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== null) params.set(key, value);
+  }
+  return params;
+}
+
+export type BusinessRow = {
+  id: string;
+  /** Identity. A business five queries found is one row, keyed on this. */
+  googlePlaceId: string;
+  name: string;
+  /** Kept raw beside the reading because a view links it — through `httpHref`, never directly. */
+  websiteUri: string | null;
+  websiteDomain: string | null;
+  /** Already read (§5.3), so no view compares the two columns and invents a fourth answer. */
+  web: WebPresence;
+  formattedAddress: string | null;
+  nationalPhone: string | null;
+  internationalPhone: string | null;
+  /** Already read (§5.14): a 5.0 from four reviews arrives as `thin`, never as a bare number. */
+  rating: RatingReading;
+  facebookUrl: string | null;
+  instagramUrl: string | null;
+  xUrl: string | null;
+  linkedinUrl: string | null;
+  /** Already read (§5.4). "Looked and found nobody" is a fact, not a gap. */
+  socials: CheckState;
+  socialsCheckedAt: Date | null;
+  /**
+   * Two states, not three, and the grant is why — `contacts` is invisible to this role, so
+   * whether the check found anyone is unanswerable from here. See `contactsCheck`.
+   */
+  contacts: ContactsCheck;
+  contactsCheckedAt: Date | null;
+  /** When the row was first written. The sightings list is the authority on when it was *seen*. */
+  createdAt: Date;
+  /** When the row was last written — a re-sighting, or an enrichment check. Not a sighting. */
+  updatedAt: Date;
+  /** How many runs have ever returned it. Exact: `run_businesses` is unique on the pair. */
+  sightings: number;
+};
+
+type RawBusinessRow = {
+  id: string;
+  google_place_id: string;
+  name: string;
+  website_uri: string | null;
+  website_domain: string | null;
+  formatted_address: string | null;
+  national_phone: string | null;
+  international_phone: string | null;
+  rating: number | null;
+  user_rating_count: number | null;
+  facebook_url: string | null;
+  instagram_url: string | null;
+  x_url: string | null;
+  linkedin_url: string | null;
+  socials_checked_at: Date | null;
+  contacts_checked_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+  sightings: number;
+  total_businesses: number;
+};
+
+function toBusinessRow(raw: RawBusinessRow): BusinessRow {
+  const socialUrls = [raw.facebook_url, raw.instagram_url, raw.x_url, raw.linkedin_url];
+  return {
+    id: raw.id,
+    googlePlaceId: raw.google_place_id,
+    name: raw.name,
+    websiteUri: raw.website_uri,
+    websiteDomain: raw.website_domain,
+    web: webPresence(raw.website_uri, raw.website_domain),
+    formattedAddress: raw.formatted_address,
+    nationalPhone: raw.national_phone,
+    internationalPhone: raw.international_phone,
+    rating: ratingReading(raw.rating, raw.user_rating_count),
+    facebookUrl: raw.facebook_url,
+    instagramUrl: raw.instagram_url,
+    xUrl: raw.x_url,
+    linkedinUrl: raw.linkedin_url,
+    socials: checkState(
+      raw.socials_checked_at,
+      socialUrls.some((url) => url !== null),
+    ),
+    socialsCheckedAt: raw.socials_checked_at,
+    contacts: contactsCheck(raw.contacts_checked_at),
+    contactsCheckedAt: raw.contacts_checked_at,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+    sightings: raw.sightings,
+  };
+}
+
+/** `%` and `_` are ILIKE wildcards; the operator typed characters, not a pattern. */
+function likeLiteral(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+export async function selectBusinesses(
+  sql: Sql,
+  filters: BusinessFilters = NO_BUSINESS_FILTERS,
+  limit: number = DEFAULT_LIMIT,
+): Promise<Page<BusinessRow>> {
+  const raw = (await sql.query(BUSINESSES_SQL, [
+    filters.q === null ? null : likeLiteral(filters.q),
+    filters.web,
+    filters.socials,
+    filters.sweep,
+    filters.city,
+    limit,
+  ])) as RawBusinessRow[];
+
+  return { rows: raw.map(toBusinessRow), total: raw[0]?.total_businesses ?? 0 };
+}
+
+export async function selectBusiness(
+  sql: Sql,
+  id: string,
+): Promise<BusinessRow | null> {
+  const raw = (await sql.query(BUSINESS_BY_ID_SQL, [id])) as RawBusinessRow[];
+  const row = raw[0];
+  return row ? toBusinessRow(row) : null;
+}
+
+export async function selectDiscoveryCities(sql: Sql): Promise<string[]> {
+  const raw = (await sql.query(DISCOVERY_CITIES_SQL, [])) as { city: string }[];
+  return raw.map((row) => row.city);
+}
+
+// --- sightings -------------------------------------------------------------------------------
+
+/**
+ * Every query that ever returned one business.
+ *
+ * **Reads `runs`, not `run_accounting`, and that is a performance decision with teeth** (§9): the
+ * view's window function partitions by `business_id`, so no predicate can be pushed into it and
+ * every query against it sorts the whole of `run_businesses`. Nothing here needs a count —
+ * `query`, `city` and `neighborhood` all exist on `runs` itself (they are three of the seven
+ * names §5.7 warns collide), so the join is simply not made.
+ *
+ * `order by rb.id` is exact "first ever seen": `run_businesses.id` is a bigserial and §3.2 says
+ * so deliberately, because timestamps tie and a sequence does not. The first row of this list is
+ * the run that earned the business its `businesses_new` credit, permanently.
+ *
+ * Booleans for the scars, like every other list statement. The text lives one link away.
+ */
+const SIGHTINGS_SQL = `
+select r.id                                                             as run_id,
+       r.batch_id                                                       as batch_id,
+       r.query                                                          as query,
+       r.city                                                           as city,
+       r.neighborhood                                                   as neighborhood,
+       rb.rank                                                          as rank,
+       rb.seen_at                                                       as seen_at,
+       rs.state                                                         as state,
+       (r.error is not null)                                            as has_error,
+       (r.aborted_reason is not null)                                   as has_aborted_reason,
+       (count(*) over ())::int                                          as total_sightings
+from run_businesses rb
+join runs r       on r.id      = rb.run_id
+join run_state rs on rs.run_id = rb.run_id
+where rb.business_id = $1
+order by rb.id asc
+limit $2
+`;
+
+export type SightingRow = {
+  runId: string;
+  batchId: string | null;
+  /** The exact string that returned it. */
+  query: string;
+  city: string | null;
+  neighborhood: string | null;
+  /** 1-based Places position, continuous across pages. Null if the writer never recorded one. */
+  rank: number | null;
+  seenAt: Date;
+  state: RunState | null;
+  hasError: boolean;
+  hasAbortedReason: boolean;
+};
+
+type RawSightingRow = {
+  run_id: string;
+  batch_id: string | null;
+  query: string;
+  city: string | null;
+  neighborhood: string | null;
+  rank: number | null;
+  seen_at: Date;
+  state: string | null;
+  has_error: boolean;
+  has_aborted_reason: boolean;
+  total_sightings: number;
+};
+
+function toSightingRow(raw: RawSightingRow): SightingRow {
+  return {
+    runId: raw.run_id,
+    batchId: raw.batch_id,
+    query: raw.query,
+    city: raw.city,
+    neighborhood: raw.neighborhood,
+    rank: raw.rank,
+    seenAt: raw.seen_at,
+    state: runStateOf(raw.state),
+    hasError: raw.has_error,
+    hasAbortedReason: raw.has_aborted_reason,
+  };
+}
+
+export async function selectSightings(
+  sql: Sql,
+  businessId: string,
+  limit: number = DEFAULT_LIMIT,
+): Promise<Page<SightingRow>> {
+  const raw = (await sql.query(SIGHTINGS_SQL, [businessId, limit])) as RawSightingRow[];
+  return { rows: raw.map(toSightingRow), total: raw[0]?.total_sightings ?? 0 };
 }

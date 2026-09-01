@@ -2,10 +2,12 @@ import { neon } from "@neondatabase/serverless";
 import env from "@next/env";
 
 import {
+  CHECK_STATE_VALUES,
   containsSecret,
   readScar,
   RUN_STATE_VALUES,
   runStateOf,
+  WEB_PRESENCE_VALUES,
 } from "../src/lib/discovery/derive.ts";
 import {
   READ_MODEL,
@@ -15,8 +17,12 @@ import {
   type Relation,
 } from "../src/lib/discovery/schema.ts";
 import {
+  NO_BUSINESS_FILTERS,
+  selectBusiness,
+  selectBusinesses,
   selectRun,
   selectRunScars,
+  selectSightings,
   selectSweepRuns,
   selectSweeps,
 } from "../src/lib/discovery/sql.ts";
@@ -28,14 +34,21 @@ import {
  * script is what makes the claim falsifiable — it runs at push time, as the `ui` role, and
  * refuses the push when the answer has changed.
  *
- * Six questions, in widening circles:
+ * Seven questions, in widening circles:
  *
  *   1. shape           every modelled column exists, with the type we typed against
  *   2. blast radius    every withheld column and ungranted relation is still invisible
  *   3. vocabulary      `run_state` still emits only the five words we recognise
  *   4. view predicates the view still concludes what 007 says it concludes
  *   5. read-through    the real queries return real rows, with counts as numbers
- *   6. write refusal   a write through this URL is refused, by the role
+ *   6. businesses      the same, plus: every filter agrees with the reading it filters on
+ *   7. write refusal   a write through this URL is refused, by the role
+ *
+ * **On check 6.** `webPresence` and `checkState` exist once in TypeScript and once more as SQL
+ * predicates, because a list of 1416 rows has to be narrowed in the database rather than in the
+ * page. That duplication cannot be designed away and it can drift silently — the cell says one
+ * thing, the filter counts another, and nobody notices until they count by hand. So it is
+ * checked instead, on live rows, for every value of both vocabularies.
  *
  * **On check 4 restating the predicates.** CLAUDE.md's rule is that no *view* re-derives run
  * state — six dashboards must not each hold an opinion about it at render time. A check is the
@@ -465,7 +478,123 @@ if (sweeps.rows.length === 0) {
   }
 }
 
-// --- 6. write refusal ------------------------------------------------------------------------
+// --- 6. the business browser's statements -----------------------------------------------------
+
+heading("businesses — the statements, and the filters that must agree with them");
+
+/** Everything, so the derived tallies below are over the whole table rather than one page. */
+const ALL_BUSINESSES = 100_000;
+
+const allBusinesses = await selectBusinesses(sql, NO_BUSINESS_FILTERS, ALL_BUSINESSES);
+
+if (allBusinesses.total === 0) {
+  note("no businesses recorded — nothing to read through");
+} else {
+  const first = allBusinesses.rows[0]!;
+
+  // §5.8 again, for this table's two counts. `sightings` is a subquery count and `total` is a
+  // window count; both are bigint before the cast, and both render as text if one is dropped.
+  const notNumbers = ([
+    ["sightings", first.sightings],
+    ["total", allBusinesses.total],
+  ] as Array<[string, unknown]>).filter(([, v]) => typeof v !== "number");
+
+  if (notNumbers.length > 0) {
+    fail(
+      `counts came back as strings — a ::int cast is missing: ${notNumbers
+        .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+        .join(", ")}`,
+    );
+  } else {
+    const web = new Set(allBusinesses.rows.map((r) => r.web));
+    const socials = new Set(allBusinesses.rows.map((r) => r.socials));
+    pass(
+      `${allBusinesses.total} business(es) typed; web presence reads as ${[...web].join(", ")}; ` +
+        `socials read as ${[...socials].join(", ")}`,
+    );
+  }
+
+  // The rail's door, through the statement a page uses.
+  const one = await selectBusiness(sql, first.id);
+  if (!one || one.id !== first.id) {
+    fail("selectBusiness did not return the row selectBusinesses just listed");
+  } else {
+    pass("selectBusiness answers by id");
+  }
+
+  const sightings = await selectSightings(sql, first.id);
+  if (typeof sightings.total !== "number") {
+    fail(`sightings total came back as ${typeof sightings.total} — a ::int cast is missing`);
+  } else if (sightings.total !== first.sightings) {
+    fail(
+      `the list says ${first.sightings} sighting(s) and the rail's statement finds ` +
+        `${sightings.total} — the two disagree about the same business`,
+    );
+  } else {
+    const unnarrowed = sightings.rows.filter((r) => r.state === null);
+    if (unnarrowed.length > 0) {
+      fail(`${unnarrowed.length} sighting(s) carry a state the read layer does not recognise`);
+    } else {
+      pass(`${sightings.total} sighting(s) for the first business, states narrowed`);
+    }
+  }
+
+  // §3.4 states `sum(businesses_new) = count(businesses)`, which would make a business with no
+  // link row impossible. It is not: the equality holds over the businesses *discovery* created,
+  // and this table also holds rows written before the first run existed. Reported rather than
+  // failed — it is a fact about how the table was populated, not a drift in what this repo
+  // claims to read, and the rail has a rendering for it.
+  const unsighted = allBusinesses.rows.filter((r) => r.sightings === 0).length;
+  if (unsighted > 0) {
+    note(
+      `${unsighted} of ${allBusinesses.total} business(es) have no link row — no run is ` +
+        `recorded as finding them, so they arrived by some door other than a sweep`,
+    );
+  }
+
+  // --- the filters, against the readings they claim to implement ---
+  //
+  // This is the one place in the repo where the same decision is written twice: `webPresence`
+  // and `checkState` in TypeScript, and the predicates in `BUSINESSES_SQL`. A drift between them
+  // is invisible from either side — the cells look right, the filter looks right, and the counts
+  // are quietly wrong. So the two are compared on live rows, for every value of both
+  // vocabularies, and a disagreement refuses the push in the repo that caused it.
+  if (allBusinesses.rows.length < allBusinesses.total) {
+    note(
+      `only ${allBusinesses.rows.length} of ${allBusinesses.total} rows fetched — ` +
+        `filter agreement not checked`,
+    );
+  } else {
+    const mismatches: string[] = [];
+
+    for (const value of WEB_PRESENCE_VALUES) {
+      const derived = allBusinesses.rows.filter((r) => r.web === value).length;
+      const filtered = await selectBusinesses(sql, { ...NO_BUSINESS_FILTERS, web: value }, 1);
+      if (filtered.total !== derived) {
+        mismatches.push(`web=${value}: SQL ${filtered.total} vs webPresence ${derived}`);
+      }
+    }
+
+    for (const value of CHECK_STATE_VALUES) {
+      const derived = allBusinesses.rows.filter((r) => r.socials === value).length;
+      const filtered = await selectBusinesses(sql, { ...NO_BUSINESS_FILTERS, socials: value }, 1);
+      if (filtered.total !== derived) {
+        mismatches.push(`socials=${value}: SQL ${filtered.total} vs checkState ${derived}`);
+      }
+    }
+
+    if (mismatches.length > 0) {
+      fail(`a filter disagrees with the reading it filters on — ${mismatches.join("; ")}`);
+    } else {
+      pass(
+        `every web presence and socials filter agrees with derive.ts across all ` +
+          `${allBusinesses.total} rows`,
+      );
+    }
+  }
+}
+
+// --- 7. write refusal ------------------------------------------------------------------------
 
 heading("write refusal — the role, not a convention in a public repo");
 

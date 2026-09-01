@@ -93,6 +93,14 @@ export default async function SweepDetailPage({
             </Link>
             <SweepStandingPill standing={standingOf(page)} />
             <RunCount page={page} />
+            {/* The other half of the sweep: not what it asked, but what came back. The filter
+                takes a batch id or a one-off's run id, the same either/or this route does. */}
+            <Link
+              href={`/businesses?${new URLSearchParams({ sweep: id }).toString()}`}
+              className="text-xs text-text-3 transition-colors hover:text-text-2"
+            >
+              businesses it found →
+            </Link>
           </div>
 
           {aborted ? <AbortNotice row={aborted} /> : null}

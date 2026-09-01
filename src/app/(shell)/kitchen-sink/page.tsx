@@ -1,4 +1,36 @@
 import {
+  CONTACTS,
+  CONTACTS_ORDER,
+  ContactsMark,
+  RATINGS,
+  RATINGS_ORDER,
+  RatingMark,
+  SOCIALS,
+  SOCIALS_ORDER,
+  SocialsMark,
+  WEB_PRESENCE,
+  WEB_PRESENCE_ORDER,
+  WebPresenceMark,
+} from "@/components/discovery/business-facts";
+import {
+  BusinessFilterBar,
+  BusinessFiltersLoading,
+} from "@/components/discovery/business-filters";
+import {
+  BusinessRailFacts,
+  SightingsFailed,
+  SightingsLoading,
+  SightingsView,
+} from "@/components/discovery/business-rail";
+import {
+  BusinessCount,
+  BusinessesEmpty,
+  BusinessesFailed,
+  BusinessesFiltered,
+  BusinessesLoading,
+  BusinessTable,
+} from "@/components/discovery/business-table";
+import {
   RunRailFacts,
   RunScarsFailed,
   RunScarsLoading,
@@ -53,8 +85,19 @@ import {
 } from "@/components/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { redactSecrets, resultCount } from "@/lib/discovery/derive";
-import type { RunRow, SweepRow } from "@/lib/discovery/sql";
+import {
+  checkState,
+  contactsCheck,
+  ratingReading,
+  redactSecrets,
+  resultCount,
+  webPresence,
+  type CheckState,
+  type ContactsCheck,
+  type RatingReading,
+  type WebPresence,
+} from "@/lib/discovery/derive";
+import type { BusinessRow, RunRow, SightingRow, SweepRow } from "@/lib/discovery/sql";
 import { EXPECTED_SCHEMA } from "@/lib/shell-status";
 
 const surfaces = [
@@ -317,6 +360,223 @@ const RUN_FIXTURES: RunRow[] = [
 ];
 
 const RUN_PAGE = { rows: RUN_FIXTURES, total: RUN_FIXTURES.length };
+
+// --- businesses --------------------------------------------------------------------------------
+
+const DAY = 24 * HOUR;
+
+/**
+ * A business fixture that cannot lie about itself.
+ *
+ * The four readings are **derived here by the same functions `toBusinessRow` uses**, rather than
+ * set alongside the columns. A fixture that could carry `web: "site"` beside a null
+ * `website_uri` would let this page show a row the read layer is incapable of producing — which
+ * is the one thing a kitchen sink must never do, because the whole reason it exists is to be
+ * trusted about states the database has not got round to holding.
+ */
+type BusinessSeed = Partial<Omit<BusinessRow, "web" | "socials" | "contacts">> &
+  Pick<BusinessRow, "id" | "name">;
+
+function makeBusiness(over: BusinessSeed): BusinessRow {
+  const row = {
+    googlePlaceId: "ChIJfake0000000000000000",
+    websiteUri: "https://mercerortho.example/",
+    websiteDomain: "mercerortho.example",
+    formattedAddress: "1200 K St, Sacramento, CA 95814, USA",
+    nationalPhone: "(916) 555-0134",
+    internationalPhone: "+1 916-555-0134",
+    rating: ratingReading(4.7, 214),
+    facebookUrl: null,
+    instagramUrl: null,
+    xUrl: null,
+    linkedinUrl: null,
+    socialsCheckedAt: null,
+    contactsCheckedAt: null,
+    createdAt: ago(6 * DAY),
+    updatedAt: ago(2 * HOUR),
+    sightings: 3,
+    ...over,
+  };
+
+  return {
+    ...row,
+    web: webPresence(row.websiteUri, row.websiteDomain),
+    socials: checkState(
+      row.socialsCheckedAt,
+      [row.facebookUrl, row.instagramUrl, row.xUrl, row.linkedinUrl].some(
+        (url) => url !== null,
+      ),
+    ),
+    contacts: contactsCheck(row.contactsCheckedAt),
+  };
+}
+
+/**
+ * The states the live table holds two of, or none of.
+ *
+ * Of 1416 businesses, **two** have an off-platform presence — so the row that teaches the third
+ * state is a row nobody would ever meet by scrolling. A non-http URL has never appeared at all,
+ * and it is the one that must not become an `href`.
+ */
+const BUSINESS_FIXTURES: BusinessRow[] = [
+  makeBusiness({
+    id: "bb000001-0000-4000-8000-000000000001",
+    name: "Mercer Orthodontics",
+    facebookUrl: "https://facebook.com/mercerortho",
+    linkedinUrl: "https://linkedin.com/company/mercerortho",
+    socialsCheckedAt: ago(2 * DAY),
+    contactsCheckedAt: ago(2 * DAY),
+    sightings: 7,
+  }),
+  makeBusiness({
+    id: "bb000002-0000-4000-8000-000000000002",
+    name: "Land Park Smile Studio",
+    websiteUri: "https://linktr.ee/landparksmiles",
+    websiteDomain: null,
+    formattedAddress: "2510 Freeport Blvd, Sacramento, CA 95818, USA",
+    rating: ratingReading(5, 4),
+    socialsCheckedAt: ago(3 * DAY),
+    contactsCheckedAt: ago(3 * DAY),
+    sightings: 2,
+  }),
+  makeBusiness({
+    id: "bb000003-0000-4000-8000-000000000003",
+    name: "Curtis Park Dental Arts",
+    websiteUri: null,
+    websiteDomain: null,
+    formattedAddress: "2801 Franklin Blvd, Sacramento, CA 95818, USA",
+    nationalPhone: null,
+    internationalPhone: null,
+    rating: ratingReading(null, null),
+    sightings: 1,
+  }),
+  makeBusiness({
+    // Forty-nine names in the live table are shared. The address is what tells them apart.
+    id: "bb000004-0000-4000-8000-000000000004",
+    name: "Mercer Orthodontics",
+    formattedAddress: "8120 Greenback Ln, Citrus Heights, CA 95610, USA",
+    websiteUri: "https://mercerortho-citrus.example/",
+    websiteDomain: "mercerortho-citrus.example",
+    rating: ratingReading(5, 9),
+    socialsCheckedAt: ago(5 * DAY),
+    sightings: 4,
+  }),
+  makeBusiness({
+    id: "bb000005-0000-4000-8000-000000000005",
+    name: "Midtown Family Dentistry",
+    // Never seen live, and the reason `httpHref` is an allowlist: shown, and not clickable.
+    websiteUri: "javascript:alert('nope')",
+    websiteDomain: null,
+    facebookUrl: "https://facebook.com/midtownfamilydds",
+    instagramUrl: "https://instagram.com/midtownfamilydds",
+    xUrl: "https://x.com/midtownfamdds",
+    linkedinUrl: "https://linkedin.com/company/midtownfamilydds",
+    socialsCheckedAt: ago(HOUR),
+    contactsCheckedAt: ago(HOUR),
+    rating: ratingReading(4.9, 1204),
+    sightings: 12,
+  }),
+  makeBusiness({
+    id: "bb000006-0000-4000-8000-000000000006",
+    name: "Arden Arcade Braces Co.",
+    formattedAddress: "1610 Watt Ave, Sacramento, CA 95864, USA",
+    rating: ratingReading(3.2, 61),
+    contactsCheckedAt: ago(9 * DAY),
+    // 293 live rows look like this: in the database with no run recorded as having found them.
+    sightings: 0,
+  }),
+];
+
+const BUSINESS_PAGE = { rows: BUSINESS_FIXTURES, total: BUSINESS_FIXTURES.length };
+
+/** One sample per value, so each vocabulary can be enumerated beside its own rendering. */
+const WEB_SAMPLES: Record<WebPresence, BusinessRow> = {
+  site: BUSINESS_FIXTURES[0]!,
+  "off-platform": BUSINESS_FIXTURES[1]!,
+  none: BUSINESS_FIXTURES[2]!,
+};
+
+const SOCIALS_SAMPLES: Record<CheckState, BusinessRow> = {
+  found: BUSINESS_FIXTURES[0]!,
+  "none-confirmed": BUSINESS_FIXTURES[3]!,
+  "never-looked": BUSINESS_FIXTURES[2]!,
+};
+
+const CONTACTS_SAMPLES: Record<ContactsCheck, BusinessRow> = {
+  checked: BUSINESS_FIXTURES[0]!,
+  "never-looked": BUSINESS_FIXTURES[2]!,
+};
+
+const RATING_SAMPLES: Record<RatingReading["kind"], RatingReading> = {
+  rated: ratingReading(4.7, 214),
+  thin: ratingReading(5, 4),
+  unrated: ratingReading(null, null),
+};
+
+/** Every query that ever returned one business, including endings the live rows have not held. */
+const SIGHTING_FIXTURES: SightingRow[] = [
+  {
+    runId: "aa000001-0000-4000-8000-000000000001",
+    batchId: "3ad70e55-0000-4000-8000-000000000002",
+    query: "orthodontists in Midtown, Sacramento, CA",
+    city: "Sacramento",
+    neighborhood: "Midtown",
+    rank: 3,
+    seenAt: ago(6 * DAY),
+    state: "completed",
+    hasError: false,
+    hasAbortedReason: false,
+  },
+  {
+    runId: "aa000002-0000-4000-8000-000000000002",
+    batchId: "3ad70e55-0000-4000-8000-000000000002",
+    query: "orthodontists in Land Park, Sacramento, CA",
+    city: "Sacramento",
+    neighborhood: "Land Park",
+    rank: 41,
+    seenAt: ago(6 * DAY),
+    state: "errored",
+    hasError: true,
+    hasAbortedReason: false,
+  },
+  {
+    runId: "aa000003-0000-4000-8000-000000000003",
+    batchId: null,
+    query: "braces near Curtis Park, Sacramento, CA",
+    city: "Sacramento",
+    neighborhood: "Curtis Park",
+    rank: null,
+    seenAt: ago(2 * DAY),
+    state: "stalled",
+    hasError: false,
+    hasAbortedReason: false,
+  },
+  {
+    runId: "aa000004-0000-4000-8000-000000000004",
+    batchId: "3ad70e55-0000-4000-8000-000000000003",
+    query: "orthodontists in Arden-Arcade, Sacramento, CA",
+    city: "Sacramento",
+    neighborhood: "Arden-Arcade",
+    rank: 12,
+    seenAt: ago(HOUR),
+    state: "aborted",
+    hasError: false,
+    hasAbortedReason: true,
+  },
+];
+
+const SIGHTINGS_PAGE = {
+  rows: SIGHTING_FIXTURES,
+  total: SIGHTING_FIXTURES.length,
+};
+
+const NO_FILTERS = {
+  q: null,
+  web: null,
+  socials: null,
+  sweep: null,
+  city: null,
+};
 
 /**
  * A fake key, and it has never been a credential.
@@ -945,6 +1205,188 @@ export default function KitchenSink() {
             failed card carries no reason because there is none to carry. A connection
             error&rsquo;s message can echo the URL that produced it, so the log gets the
             error&rsquo;s name and the operator gets the card.
+          </p>
+        </Section>
+
+        <Section title="Business facts — three states, not two">
+          <div className="space-y-4 text-xs">
+            <div className="space-y-1.5">
+              <p className="text-text-2">web presence</p>
+              {WEB_PRESENCE_ORDER.map((value) => (
+                <div key={value} className="flex items-baseline gap-3">
+                  <div className="w-44 shrink-0">
+                    <WebPresenceMark row={WEB_SAMPLES[value]} />
+                  </div>
+                  <span className="text-text-3">{WEB_PRESENCE[value].note}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-text-2">socials</p>
+              {SOCIALS_ORDER.map((value) => (
+                <div key={value} className="flex items-baseline gap-3">
+                  <div className="w-44 shrink-0">
+                    <SocialsMark row={SOCIALS_SAMPLES[value]} />
+                  </div>
+                  <span className="text-text-3">{SOCIALS[value].note}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-text-2">contacts — two states, and the grant is why</p>
+              {CONTACTS_ORDER.map((value) => (
+                <div key={value} className="flex items-baseline gap-3">
+                  <div className="w-44 shrink-0">
+                    <ContactsMark row={CONTACTS_SAMPLES[value]} />
+                  </div>
+                  <span className="text-text-3">{CONTACTS[value].note}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-text-2">rating</p>
+              {RATINGS_ORDER.map((kind) => (
+                <div key={kind} className="flex items-baseline gap-3">
+                  <div className="w-44 shrink-0">
+                    <RatingMark reading={RATING_SAMPLES[kind]} />
+                  </div>
+                  <span className="text-text-3">{RATINGS[kind].note}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="max-w-prose text-xs text-text-3">
+            <span className="text-text-2">None of these is a status, so none of them is
+            coloured.</span>{" "}
+            Purple is identity, ok / warn / fail / info is severity, and &ldquo;this
+            business has no website&rdquo; is neither — what separates them here is weight
+            and glyph. The hollow ring appears exactly three times, and never on a fact:{" "}
+            <span className="text-text-2">never looked</span> for socials,{" "}
+            <span className="text-text-2">never looked</span> for contacts, and{" "}
+            <span className="text-text-2">never rated</span>. Absence of colour is absence
+            of knowledge — so <span className="text-text-2">no site</span> is plain text,
+            because we looked at the payload and there was no URL, and{" "}
+            <span className="text-text-2">none confirmed</span> is plain text, because
+            somebody looked and found nobody.
+          </p>
+        </Section>
+
+        <Section title="Business browser — the dense table">
+          <BusinessCount page={{ rows: BUSINESS_FIXTURES, total: 1416 }} />
+          <BusinessTable page={BUSINESS_PAGE} basePath="/kitchen-sink" selected="bb000002-0000-4000-8000-000000000002" />
+          <p className="max-w-prose text-xs text-text-3">
+            Six rows carrying what fourteen hundred live ones mostly do not. Row two is the{" "}
+            <span className="text-text-2">off-platform</span> presence — there are two of
+            those in the whole database, so scrolling would never find one. Row five holds
+            a <span className="font-mono">javascript:</span> URL, which has never appeared
+            live and is rendered as text rather than a link, because{" "}
+            <span className="text-text-2">httpHref</span> is an allowlist. Row six has{" "}
+            <span className="text-text-2">no sightings at all</span>: 293 live businesses
+            are in this table without any run recorded as having found them. The two{" "}
+            <span className="text-text-2">Mercer Orthodontics</span> rows are why the
+            address sits under the name.
+          </p>
+        </Section>
+
+        <Section title="Business browser — the filters">
+          <BusinessFilterBar
+            filters={NO_FILTERS}
+            selected={null}
+            cities={["Austin", "Houston"]}
+            basePath="/kitchen-sink"
+          />
+          <BusinessFilterBar
+            filters={{
+              q: "law",
+              web: "off-platform",
+              socials: "none-confirmed",
+              sweep: "3ad70e55-0000-4000-8000-000000000002",
+              city: "Austin",
+            }}
+            selected="bb000002-0000-4000-8000-000000000002"
+            cities={null}
+            basePath="/kitchen-sink"
+          />
+          <BusinessFiltersLoading />
+          <p className="max-w-prose text-xs text-text-3">
+            Links rather than a select, because a row of links shows all three states of a
+            three-state vocabulary at once — which is the thing the vocabulary exists to
+            teach. The second bar is every filter applied, with the city list{" "}
+            <span className="text-text-2">degraded</span>: the options could not be read,
+            so the control says which part is missing and stays clearable rather than
+            disappearing. A selection rides through every one of these links, because
+            narrowing the list and choosing a row are different questions.
+          </p>
+        </Section>
+
+        <Section title="Business browser — its pending states">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <BusinessesEmpty />
+            <BusinessesFiltered />
+            <BusinessesLoading />
+            <BusinessesFailed />
+          </div>
+          <p className="max-w-prose text-xs text-text-3">
+            <span className="text-text-2">Five, not four.</span> A dense list with filters
+            has an extra one, and it is the one that gets spent wrongly:{" "}
+            <span className="text-text-2">nothing matched</span> is not{" "}
+            <span className="text-text-2">no businesses yet</span>. Telling an operator the
+            pipeline is empty when it holds fourteen hundred rows behind a narrow filter is
+            a lie the page would tell every day. The fifth is the rail&rsquo;s not-found,
+            below.
+          </p>
+        </Section>
+
+        <Section title="Business browser — the rail">
+          <div className="flex flex-wrap gap-4">
+            <Frame label="unselected" className="w-80">
+              <RailEmpty />
+            </Frame>
+            <Frame label="stale ?business= — and the page is still 200" className="w-80">
+              <RailNotFound />
+            </Frame>
+            <Frame label="loading" className="w-80">
+              <RailLoading />
+            </Frame>
+          </div>
+
+          <div className="flex flex-wrap gap-4">
+            <Frame label="facts — off-platform, thin rating" className="w-80">
+              <BusinessRailFacts row={BUSINESS_FIXTURES[1]!} />
+            </Frame>
+            <Frame label="facts — never looked at anything" className="w-80">
+              <BusinessRailFacts row={BUSINESS_FIXTURES[2]!} />
+            </Frame>
+          </div>
+
+          <div className="flex flex-wrap gap-4">
+            <Frame label="sightings" className="w-80">
+              <SightingsView page={SIGHTINGS_PAGE} />
+            </Frame>
+            <Frame label="sightings — none recorded" className="w-80">
+              <SightingsView page={{ rows: [], total: 0 }} />
+            </Frame>
+            <Frame label="sightings — loading / failed" className="w-80">
+              <div className="space-y-3">
+                <SightingsLoading />
+                <SightingsFailed />
+              </div>
+            </Frame>
+          </div>
+
+          <p className="max-w-prose text-xs text-text-3">
+            The rail is the only place that says why the contacts column is two states and
+            not three — said once here rather than in two hundred cells. The sightings list
+            tags its <span className="text-text-2">first sighting</span>, which is exact
+            rather than approximate: the link row is a bigserial, so &ldquo;first ever
+            seen&rdquo; is a sequence comparison with no timestamps to tie, and that run
+            holds the business&rsquo;s <span className="font-mono">new</span> credit
+            permanently. A scar is named beside the pill and never instead of it — its text
+            lives one link away, in the run&rsquo;s own rail.
           </p>
         </Section>
       </div>

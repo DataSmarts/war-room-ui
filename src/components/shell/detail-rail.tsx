@@ -36,6 +36,37 @@ export function DetailLayout({
   );
 }
 
+/**
+ * One labelled fact. Shared by every rail rather than copied into each.
+ *
+ * The label column is a fixed width on purpose: two rails side by side in the kitchen sink with
+ * different gutters read as two components, and they are one. Extracted the moment there was a
+ * second rail to keep honest.
+ */
+export function RailField({
+  label,
+  title,
+  children,
+}: {
+  label: string;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+      <dt className="text-text-3" title={title}>
+        {label}
+      </dt>
+      <dd className="min-w-0 text-text-2">{children}</dd>
+    </div>
+  );
+}
+
+/** Never blank. A cell with nothing in it reads as a bug; this is a fact about the row. */
+export function RailValue({ children }: { children: string | null }) {
+  return children ? <>{children}</> : <span className="text-text-3">unrecorded</span>;
+}
+
 // The rail's states are the page's pending states, sized for the rail — not a second set of
 // cards that can drift from the first.
 

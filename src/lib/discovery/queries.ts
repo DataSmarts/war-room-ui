@@ -4,13 +4,21 @@ import { read, type Read } from "@/lib/db";
 
 import { isUuid } from "./derive";
 import {
+  NO_BUSINESS_FILTERS,
+  selectBusiness,
+  selectBusinesses,
+  selectDiscoveryCities,
   selectRun,
   selectRunScars,
+  selectSightings,
   selectSweepRuns,
   selectSweeps,
+  type BusinessFilters,
+  type BusinessRow,
   type Page,
   type RunRow,
   type RunScars,
+  type SightingRow,
   type SweepRow,
 } from "./sql";
 
@@ -26,7 +34,15 @@ import {
  * that only makes sense inside Next.
  */
 
-export type { Page, RunRow, RunScars, SweepRow };
+export type {
+  BusinessFilters,
+  BusinessRow,
+  Page,
+  RunRow,
+  RunScars,
+  SightingRow,
+  SweepRow,
+};
 
 /**
  * An id out of a URL that is not a uuid is a **not-found**, never an unknown.
@@ -76,4 +92,55 @@ export const getRunScars = cache(
     if (!isUuid(runId)) return { ok: true, value: null };
     return read("discovery/run-scars", (sql) => selectRunScars(sql, runId));
   },
+);
+
+/**
+ * Everything discovery has found, narrowed by whatever the URL asked for.
+ *
+ * No `isUuid` guard: `parseBusinessFilters` has already shape-checked the one filter that is an
+ * id, and every other value either names something or matches nothing.
+ */
+export const listBusinesses = cache(
+  (
+    filters: BusinessFilters = NO_BUSINESS_FILTERS,
+    limit?: number,
+  ): Promise<Read<Page<BusinessRow>>> =>
+    read("discovery/businesses", (sql) => selectBusinesses(sql, filters, limit)),
+);
+
+/**
+ * One business, for the rail.
+ *
+ * Read by id rather than found in the list, so the selection is independent of the filters: a
+ * business stays open while the table narrows around it, and a link travels whether or not the
+ * recipient's filters would have shown that row.
+ */
+export const getBusiness = cache(
+  async (id: string): Promise<Read<BusinessRow | null>> => {
+    if (!isUuid(id)) return { ok: true, value: null };
+    return read("discovery/business", (sql) => selectBusiness(sql, id));
+  },
+);
+
+/** Every query that ever returned one business, oldest sighting first. */
+export const listSightings = cache(
+  async (businessId: string, limit?: number): Promise<Read<Page<SightingRow>>> => {
+    if (!isUuid(businessId)) return NOT_FOUND_PAGE;
+    return read("discovery/sightings", (sql) =>
+      selectSightings(sql, businessId, limit),
+    );
+  },
+);
+
+/**
+ * The cities discovery has swept, for the filter's options.
+ *
+ * Its own tiny read rather than a column on the list, because the options must not narrow as the
+ * list does — a filter bar that forgets the other cities the moment you pick one is a trap. It
+ * degrades like everything else: the control falls back to a text box rather than the page
+ * failing over a select.
+ */
+export const listDiscoveryCities = cache(
+  (): Promise<Read<string[]>> =>
+    read("discovery/cities", (sql) => selectDiscoveryCities(sql)),
 );

@@ -2,6 +2,7 @@ import * as React from "react";
 
 import { Disclosure, DisclosureBody } from "@/components/disclosure";
 import { EmptyState, FailedState, LoadingRows } from "@/components/pending";
+import { RailField, RailValue } from "@/components/shell/detail-rail";
 import { StatusPill } from "@/components/status-pill";
 import { readScar, type ResultCount } from "@/lib/discovery/derive";
 import { getRunScars } from "@/lib/discovery/queries";
@@ -19,34 +20,6 @@ import { absoluteTime, relativeTime } from "@/lib/time";
  * That split is also why the rail has a real loading state while the page does not: the page
  * awaits its read so a stale id can answer 404 rather than 200, and the rail streams.
  */
-
-function Field({
-  label,
-  title,
-  children,
-}: {
-  label: string;
-  title?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-0.5">
-      <dt className="text-text-3" title={title}>
-        {label}
-      </dt>
-      <dd className="min-w-0 text-text-2">{children}</dd>
-    </div>
-  );
-}
-
-/** Never blank. A cell with nothing in it reads as a bug; this is a fact about the run. */
-function Value({ children }: { children: string | null }) {
-  return children ? (
-    <>{children}</>
-  ) : (
-    <span className="text-text-3">unrecorded</span>
-  );
-}
 
 /** The result count in words, so the rail states what the table's `60+` is claiming. */
 function resultSentence(results: ResultCount): string {
@@ -73,48 +46,48 @@ export function RunRailFacts({ row }: { row: RunRow }) {
       <StatusPill state={row.state} />
 
       <dl className="space-y-1">
-        <Field label="niche">
-          <Value>{row.niche}</Value>
-        </Field>
-        <Field label="city">
-          <Value>{row.city}</Value>
-        </Field>
-        <Field label="neighborhood">
-          <Value>{row.neighborhood}</Value>
-        </Field>
-        <Field label="country">
-          <Value>{row.country}</Value>
-        </Field>
-        <Field
+        <RailField label="niche">
+          <RailValue>{row.niche}</RailValue>
+        </RailField>
+        <RailField label="city">
+          <RailValue>{row.city}</RailValue>
+        </RailField>
+        <RailField label="neighborhood">
+          <RailValue>{row.neighborhood}</RailValue>
+        </RailField>
+        <RailField label="country">
+          <RailValue>{row.country}</RailValue>
+        </RailField>
+        <RailField
           label="bias centre"
           title="the geocoded centre of the AREA, not of any business — and the radius that went with it is not in this database"
         >
-          <Value>
+          <RailValue>
             {row.lat !== null && row.lng !== null
               ? `${row.lat.toFixed(5)}, ${row.lng.toFixed(5)}`
               : null}
-          </Value>
-        </Field>
+          </RailValue>
+        </RailField>
       </dl>
 
       <dl className="space-y-1">
-        <Field label="returned">{resultSentence(row.results)}</Field>
-        <Field label="matched">{row.businessesMatched}</Field>
-        <Field label="new">{row.businessesNew}</Field>
-        <Field label="known">{row.businessesKnown}</Field>
-        <Field
+        <RailField label="returned">{resultSentence(row.results)}</RailField>
+        <RailField label="matched">{row.businessesMatched}</RailField>
+        <RailField label="new">{row.businessesNew}</RailField>
+        <RailField label="known">{row.businessesKnown}</RailField>
+        <RailField
           label="web presence"
           title="counted now rather than at sweep time, and an off-platform page counts (§5.9)"
         >
           {row.businessesWithWebPresence}
-        </Field>
+        </RailField>
       </dl>
 
       <dl className="space-y-1">
-        <Field label="created">
+        <RailField label="created">
           <span title={absoluteTime(row.createdAt)}>{relativeTime(row.createdAt)}</span>
-        </Field>
-        <Field
+        </RailField>
+        <RailField
           label="completed"
           title="the authority on whether this run finished — even when a scar is set"
         >
@@ -125,13 +98,13 @@ export function RunRailFacts({ row }: { row: RunRow }) {
           ) : (
             <span className="text-text-3">no ending recorded</span>
           )}
-        </Field>
-        <Field
+        </RailField>
+        <RailField
           label="last progress"
           title="stamped only where a page committed — never when one was merely tried"
         >
           <span title={absoluteTime(row.updatedAt)}>{relativeTime(row.updatedAt)}</span>
-        </Field>
+        </RailField>
       </dl>
 
       {row.hasNextPage ? (

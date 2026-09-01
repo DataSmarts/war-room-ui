@@ -1,20 +1,18 @@
 /**
  * The readings the database does not make for us.
  *
- * Three of the four rules here are traps in the discovery data: a number that is a ceiling
- * rather than a count, and two pairs of columns where "we never looked" and "we looked and found
- * nothing" are different facts the schema keeps apart on purpose. Each one has a way of being
- * rendered that is plausible and wrong, and each is decided once, here, so six views cannot each
- * arrive at their own answer.
+ * Most of what follows is a trap in the discovery data: a number that is a ceiling rather than a
+ * count, two pairs of columns where "we never looked" and "we looked and found nothing" are
+ * different facts the schema keeps apart on purpose, a rating that four reviews cannot support,
+ * and a URL a provider handed us that must never become an `href` unexamined. Each one has a way
+ * of being rendered that is plausible and wrong, and each is decided once, here, so six views
+ * cannot each arrive at their own answer.
  *
- * The fourth is the one reading the database *does* make. `run_state` (007) concludes a run's
- * state from facts; this file only recognises what it said. There is no second opinion about the
- * predicates in this repo and there is not meant to be one.
- *
- * The fifth is one rung up: a sweep is a *grouping* of runs, so rolling their states into a
- * single word for one row of the sweep index is a ranking, and a ranking is an opinion. Held
- * here, once, for the same reason as the rest — and not to be confused with re-deriving a run's
- * state, which nothing in this repo does.
+ * Two are not traps but readings *of* a reading. `run_state` (007) concludes a run's state from
+ * facts; this file only recognises what it said, and there is no second opinion about those
+ * predicates in this repo. One rung up, a sweep is a *grouping* of runs, so rolling their states
+ * into a single word for one row of the sweep index is a ranking, and a ranking is an opinion —
+ * held here, once, and not to be confused with re-deriving a run's state, which nothing does.
  *
  * **No imports, deliberately.** `node --test` runs this file with nothing but type stripping — no
  * bundler, no renderer, no database — which is what makes the table beside it possible.
@@ -165,8 +163,18 @@ export function resultCount(resultsReturned: number): ResultCount {
  * listing. The writing tool returns a null `website_domain` for those hosts on purpose, so the
  * pair of columns carries a distinction a single boolean would flatten. It is a real presence
  * and it is unusable downstream in a different way than having no site at all.
+ *
+ * **The list of those hosts lives in the operating half and nothing here recomputes it.** It has
+ * already grown past what the reference documents — live rows carry a null domain for hosts §3.3
+ * never listed — so a domain parsed here would disagree with the column beside it. This function
+ * reads the two columns and nothing else.
+ *
+ * Ordered for the kitchen sink, and exported as values so a filter and a rendering can both be
+ * checked against the same list rather than each repeating it.
  */
-export type WebPresence = "site" | "off-platform" | "none";
+export const WEB_PRESENCE_VALUES = ["site", "off-platform", "none"] as const;
+
+export type WebPresence = (typeof WEB_PRESENCE_VALUES)[number];
 
 export function webPresence(
   websiteUri: string | null,
@@ -185,13 +193,99 @@ export function webPresence(
  * nothing, precisely so "never looked" stays distinguishable from "looked, found nobody". The
  * second renders **"none confirmed"**: it is a fact about the business, not a gap in our data.
  */
-export type CheckState = "never-looked" | "none-confirmed" | "found";
+export const CHECK_STATE_VALUES = ["found", "none-confirmed", "never-looked"] as const;
+
+export type CheckState = (typeof CHECK_STATE_VALUES)[number];
 
 export function checkState(checkedAt: Date | null, found: boolean): CheckState {
   // Evidence outranks the timestamp. Rendering "never looked" beside a Facebook URL we are
   // holding would be the one reading that contradicts itself.
   if (found) return "found";
   return checkedAt ? "none-confirmed" : "never-looked";
+}
+
+/**
+ * The same question about contacts, and the answer the grant will not let us give.
+ *
+ * **Deliberately not `checkState`, and the next hand through here will want to "fix" that.**
+ * `checkState` needs `found`, and `found` for contacts means "this business has at least one
+ * row in `contacts`" — a table the `ui` role cannot see at all (§6). It is not withheld by
+ * oversight: `contacts` holds decision-makers' names and addresses, and this deploy is a public
+ * URL until the login lands.
+ *
+ * So passing `found: false` would be the cheap fix and the wrong one. It would render every
+ * business anyone has ever looked at as **"none confirmed"** — a positive claim that nobody was
+ * found, made by code that cannot see whether anyone was. Two states is what this role can back:
+ * we looked, or we did not. What the looking turned up is absent knowledge, and the rendering
+ * says so with no colour rather than inventing a word for it.
+ */
+export type ContactsCheck = "never-looked" | "checked";
+
+export function contactsCheck(checkedAt: Date | null): ContactsCheck {
+  return checkedAt ? "checked" : "never-looked";
+}
+
+/**
+ * Trap §5.14 — a rating is a sample, and most of these samples are tiny.
+ *
+ * Google returns `rating` and `user_rating_count` together, and the first is meaningless without
+ * the second: a 5.0 from four reviews and a 4.8 from two hundred are not the same claim, and
+ * drawing them the same way is how a shortlist gets built on noise. In the live table 188
+ * businesses are rated exactly 5.0 on fewer than ten reviews — this is the common case, not the
+ * edge.
+ *
+ * The floor is a choice rather than a law, which is why it is a named constant and why the tests
+ * probe the boundary instead of asserting the number the way `PLACES_TEXT_SEARCH_CAP` is
+ * asserted. Google's cap is Google's; ten is ours.
+ *
+ * A `thin` reading still carries the number — hiding it would be its own dishonesty. What it
+ * loses is the *weight*: no view may draw either kind as stars, a bar or a meter, because a
+ * filled shape is a confidence claim four reviews cannot support.
+ */
+export const RATING_CONFIDENCE_MIN = 10;
+
+export type RatingReading =
+  | { kind: "unrated" }
+  | { kind: "thin"; rating: number; reviews: number }
+  | { kind: "rated"; rating: number; reviews: number };
+
+export function ratingReading(
+  rating: number | null,
+  reviews: number | null,
+): RatingReading {
+  // Both columns or neither: a rating with no reviews behind it is not a thin rating, it is not
+  // a rating. Live rows never split the pair, but the schema permits it and a null slipping
+  // through as `0 reviews` would read as a fact.
+  if (rating === null || reviews === null || reviews < 1) return { kind: "unrated" };
+  return reviews < RATING_CONFIDENCE_MIN
+    ? { kind: "thin", rating, reviews }
+    : { kind: "rated", rating, reviews };
+}
+
+/**
+ * A provider's URL, and whether it may become an `href`.
+ *
+ * Five columns on `businesses` hold URLs nobody here wrote — `website_uri` and the four socials,
+ * all of them straight out of a Places payload or a socials scrape. §6's standing rule was paid
+ * for on the outbound side, where a `javascript:` URL once flowed into an email; a link in a
+ * dashboard is the same hazard with a shorter fuse.
+ *
+ * **An allowlist, not a denylist**, because the denylist loses. Browsers strip tabs and newlines
+ * from inside a scheme, so a `javascript:` URL with a tab dropped in the middle of the word is
+ * still live and any pattern hunting for the literal word misses it. Requiring the string to
+ * *begin* `http://` or `https://` makes
+ * the whole class unrepresentable instead of enumerable — protocol-relative `//host`, `data:`,
+ * `mailto:` and every scheme nobody has thought of yet all come back null.
+ *
+ * Null means "render it as text": the value is still shown, it just is not clickable. Dropping
+ * the value entirely would hide a fact about the business to solve a problem about a link.
+ */
+const HTTP_URL = /^https?:\/\//i;
+
+export function httpHref(uri: string | null): string | null {
+  if (!uri) return null;
+  const trimmed = uri.trim();
+  return HTTP_URL.test(trimmed) ? trimmed : null;
 }
 
 /**

@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  CHECK_STATE_VALUES,
   checkState,
   containsSecret,
+  contactsCheck,
+  httpHref,
   isUuid,
   PLACES_TEXT_SEARCH_CAP,
+  RATING_CONFIDENCE_MIN,
+  ratingReading,
   readScar,
   redactSecrets,
   resultCount,
@@ -14,8 +19,11 @@ import {
   SCAR_DISPLAY_MAX,
   SWEEP_STANDING_VALUES,
   sweepStanding,
+  WEB_PRESENCE_VALUES,
   webPresence,
   type CheckState,
+  type ContactsCheck,
+  type RatingReading,
   type ResultCount,
   type RunState,
   type SweepStanding,
@@ -270,6 +278,169 @@ const CHECK_STATE_CASES: ReadonlyArray<{
 test("checkState keeps 'never looked' and 'looked, found nobody' apart", () => {
   for (const { checkedAt, found, expected, why } of CHECK_STATE_CASES) {
     assert.equal(checkState(checkedAt, found), expected, `${checkedAt} / ${found} — ${why}`);
+  }
+});
+
+// Both vocabularies are filtered in SQL as well as rendered, so a value with no case here is a
+// value nothing has checked the filter against. `schema:check` closes the other half of that
+// loop against live rows; this half needs no database.
+
+test("every web presence the columns can express has a case above", () => {
+  const covered = new Set(WEB_PRESENCE_CASES.map((c) => c.expected));
+  assert.deepEqual([...covered].sort(), [...WEB_PRESENCE_VALUES].sort());
+});
+
+test("every check state has a case above", () => {
+  const covered = new Set(CHECK_STATE_CASES.map((c) => c.expected));
+  assert.deepEqual([...covered].sort(), [...CHECK_STATE_VALUES].sort());
+});
+
+// --- contactsCheck ---------------------------------------------------------------------------
+
+const CONTACTS_CHECK_CASES: ReadonlyArray<{
+  checkedAt: Date | null;
+  expected: ContactsCheck;
+  why: string;
+}> = [
+  {
+    checkedAt: CHECKED_AT,
+    expected: "checked",
+    why: "an enrichment ran — and what it found is NOT claimed, because this role cannot see the contacts table",
+  },
+  {
+    checkedAt: null,
+    expected: "never-looked",
+    why: "nobody has looked; nothing is known either way",
+  },
+];
+
+test("contactsCheck answers only the half of the question this role can see", () => {
+  for (const { checkedAt, expected, why } of CONTACTS_CHECK_CASES) {
+    assert.equal(contactsCheck(checkedAt), expected, `${checkedAt} — ${why}`);
+  }
+});
+
+test("contactsCheck never reaches 'none confirmed', however tempting the shortcut is", () => {
+  // The failure this guards: someone "unifies" the two by calling `checkState(checkedAt, false)`,
+  // and 712 live businesses start claiming nobody was found by code that cannot see whether
+  // anyone was. The two functions must not agree on a checked business.
+  assert.equal(contactsCheck(CHECKED_AT), "checked");
+  assert.notEqual(
+    contactsCheck(CHECKED_AT) as string,
+    checkState(CHECKED_AT, false) as string,
+  );
+});
+
+// --- ratingReading ---------------------------------------------------------------------------
+
+const RATING_CASES: ReadonlyArray<{
+  rating: number | null;
+  reviews: number | null;
+  expected: RatingReading;
+  why: string;
+}> = [
+  {
+    rating: 5,
+    reviews: 4,
+    expected: { kind: "thin", rating: 5, reviews: 4 },
+    why: "the case the issue names: a 5.0 from four reviews is a sample, not a score",
+  },
+  {
+    rating: 4.8,
+    reviews: 214,
+    expected: { kind: "rated", rating: 4.8, reviews: 214 },
+    why: "enough behind it to read as a rating",
+  },
+  {
+    rating: 3.1,
+    reviews: RATING_CONFIDENCE_MIN,
+    expected: { kind: "rated", rating: 3.1, reviews: RATING_CONFIDENCE_MIN },
+    why: "the boundary is inclusive — at the floor is rated",
+  },
+  {
+    rating: 3.1,
+    reviews: RATING_CONFIDENCE_MIN - 1,
+    expected: { kind: "thin", rating: 3.1, reviews: RATING_CONFIDENCE_MIN - 1 },
+    why: "one below the floor is thin",
+  },
+  { rating: null, reviews: null, expected: { kind: "unrated" }, why: "never rated" },
+  {
+    rating: 5,
+    reviews: null,
+    expected: { kind: "unrated" },
+    why: "a rating with no sample size behind it is not a thin rating, it is not a rating",
+  },
+  {
+    rating: null,
+    reviews: 30,
+    expected: { kind: "unrated" },
+    why: "reviews without a score say nothing about quality",
+  },
+  {
+    rating: 5,
+    reviews: 0,
+    expected: { kind: "unrated" },
+    why: "zero reviews would render as '0 reviews' beside a 5.0 — a claim about nothing",
+  },
+];
+
+test("ratingReading never lets a number stand without its sample size", () => {
+  for (const { rating, reviews, expected, why } of RATING_CASES) {
+    assert.deepEqual(ratingReading(rating, reviews), expected, `${rating} / ${reviews} — ${why}`);
+  }
+});
+
+test("every rating reading has a case above", () => {
+  const covered = new Set(RATING_CASES.map((c) => c.expected.kind));
+  assert.deepEqual([...covered].sort(), ["rated", "thin", "unrated"]);
+});
+
+// --- httpHref --------------------------------------------------------------------------------
+
+const HREF_CASES: ReadonlyArray<{
+  uri: string | null;
+  expected: string | null;
+  why: string;
+}> = [
+  {
+    uri: "https://thereinerlaw.com/",
+    expected: "https://thereinerlaw.com/",
+    why: "the ordinary case",
+  },
+  { uri: "http://example.com", expected: "http://example.com", why: "plain http is allowed" },
+  {
+    uri: "HTTPS://EXAMPLE.COM",
+    expected: "HTTPS://EXAMPLE.COM",
+    why: "schemes are case-insensitive to a browser, so they are here",
+  },
+  {
+    uri: "  https://example.com  ",
+    expected: "https://example.com",
+    why: "surrounding whitespace is not a scheme change",
+  },
+  { uri: "javascript:alert(1)", expected: null, why: "the one that was paid for" },
+  {
+    uri: "  JavaScript:alert(1)",
+    expected: null,
+    why: "leading space and mixed case do not smuggle it past an allowlist",
+  },
+  {
+    uri: "java\tscript:alert(1)",
+    expected: null,
+    why: "a browser strips the tab and runs it — which is exactly why this is an allowlist",
+  },
+  { uri: "data:text/html,<script>", expected: null, why: "not http(s)" },
+  { uri: "//evil.example/x", expected: null, why: "protocol-relative inherits the page's" },
+  { uri: "https:/example.com", expected: null, why: "one slash is not the scheme" },
+  { uri: "mailto:someone@example.com", expected: null, why: "not http(s)" },
+  { uri: "example.com", expected: null, why: "no scheme at all" },
+  { uri: null, expected: null, why: "nothing to link" },
+  { uri: "   ", expected: null, why: "whitespace is not a URL" },
+];
+
+test("httpHref admits http(s) and nothing else", () => {
+  for (const { uri, expected, why } of HREF_CASES) {
+    assert.equal(httpHref(uri), expected, `${JSON.stringify(uri)} — ${why}`);
   }
 });
 
