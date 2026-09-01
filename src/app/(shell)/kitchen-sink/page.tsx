@@ -1,4 +1,11 @@
 import {
+  SweepCount,
+  SweepsEmpty,
+  SweepsFailed,
+  SweepsLoading,
+  SweepTable,
+} from "@/components/discovery/sweep-table";
+import {
   EmptyState,
   FailedState,
   LoadingRows,
@@ -23,9 +30,18 @@ import {
   NavSkeleton,
   TopBarChrome,
 } from "@/components/shell/top-bar";
-import { RUN_STATES, RunState, StatusPill } from "@/components/status-pill";
+import {
+  RUN_STATES,
+  RunState,
+  StatusPill,
+  SWEEP_STANDING_ORDER,
+  SWEEP_STANDINGS,
+  SweepStanding,
+  SweepStandingPill,
+} from "@/components/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { SweepRow } from "@/lib/discovery/sql";
 import { EXPECTED_SCHEMA } from "@/lib/shell-status";
 
 const surfaces = [
@@ -41,7 +57,139 @@ const runStates = Object.entries(RUN_STATES) as [
   (typeof RUN_STATES)[RunState],
 ][];
 
-const HOUR = 60 * 60 * 1000;
+const standings = SWEEP_STANDING_ORDER.map(
+  (standing) => [standing, SWEEP_STANDINGS[standing]] as const,
+);
+
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+
+/** Only the states a fixture cares about; the rest are nought. */
+function runs(counts: Partial<Record<RunState, number>>): Record<RunState, number> {
+  return { completed: 0, aborted: 0, errored: 0, running: 0, stalled: 0, ...counts };
+}
+
+const ago = (ms: number) => new Date(Date.now() - ms);
+
+/**
+ * Invented sweeps — every standing and every shape, none of which the database currently holds.
+ *
+ * Four of the five standings have never occurred in a real row, which is exactly why they are
+ * here rather than left to a screenshot to stumble across one day. The cities and niches are
+ * made up: this repo is public, and the live campaign's targeting is not something it commits.
+ *
+ * Rows two and three are **deliberately identical in every number** — see the caption.
+ */
+const SWEEP_FIXTURES: SweepRow[] = [
+  {
+    batchId: "9f2c41ab-0000-4000-8000-000000000001",
+    runId: null,
+    firstRunAt: ago(26 * HOUR),
+    lastProgressAt: ago(25 * HOUR),
+    queries: 12,
+    cities: ["Portland"],
+    niches: ["roofers"],
+    businessesNew: 214,
+    sightingsKnown: 96,
+    saturatedQueries: 9,
+    states: runs({ completed: 12 }),
+  },
+  {
+    batchId: "3ad70e55-0000-4000-8000-000000000002",
+    runId: null,
+    firstRunAt: ago(3 * HOUR),
+    lastProgressAt: ago(2 * HOUR),
+    queries: 12,
+    cities: ["Sacramento"],
+    niches: ["orthodontists"],
+    businessesNew: 168,
+    sightingsKnown: 74,
+    saturatedQueries: 7,
+    states: runs({ completed: 11, aborted: 1 }),
+  },
+  {
+    batchId: "c81b96d4-0000-4000-8000-000000000003",
+    runId: null,
+    firstRunAt: ago(3 * HOUR),
+    lastProgressAt: ago(4 * MINUTE),
+    queries: 12,
+    cities: ["Sacramento"],
+    niches: ["orthodontists"],
+    businessesNew: 168,
+    sightingsKnown: 74,
+    saturatedQueries: 7,
+    states: runs({ completed: 11, running: 1 }),
+  },
+  {
+    batchId: "5e0aa317-0000-4000-8000-000000000004",
+    runId: null,
+    firstRunAt: ago(9 * HOUR),
+    lastProgressAt: ago(5 * HOUR),
+    queries: 8,
+    cities: ["Fresno"],
+    niches: ["chiropractors"],
+    businessesNew: 91,
+    sightingsKnown: 38,
+    saturatedQueries: 2,
+    states: runs({ completed: 7, stalled: 1 }),
+  },
+  {
+    batchId: "b6d4f209-0000-4000-8000-000000000005",
+    runId: null,
+    firstRunAt: ago(31 * HOUR),
+    lastProgressAt: ago(30 * HOUR),
+    queries: 9,
+    cities: ["Tucson"],
+    niches: ["hvac contractors"],
+    businessesNew: 143,
+    sightingsKnown: 61,
+    saturatedQueries: 9,
+    states: runs({ completed: 8, errored: 1 }),
+  },
+  {
+    // Five counts that sum to five, over six runs. One run holds a word this build has never
+    // seen, and the row says so rather than reading as complete.
+    batchId: "0c73e8fa-0000-4000-8000-000000000006",
+    runId: null,
+    firstRunAt: ago(50 * HOUR),
+    lastProgressAt: ago(49 * HOUR),
+    queries: 6,
+    cities: ["Boise"],
+    niches: ["dentists"],
+    businessesNew: 47,
+    sightingsKnown: 12,
+    saturatedQueries: 0,
+    states: runs({ completed: 5 }),
+  },
+  {
+    // A run that was never part of a grid. Its identity is its own id.
+    batchId: null,
+    runId: "e41d90c7-0000-4000-8000-000000000007",
+    firstRunAt: ago(72 * HOUR),
+    lastProgressAt: ago(72 * HOUR),
+    queries: 1,
+    cities: ["Reno"],
+    niches: ["podiatrists"],
+    businessesNew: 19,
+    sightingsKnown: 0,
+    saturatedQueries: 0,
+    states: runs({ completed: 1 }),
+  },
+  {
+    // Every run's city and niche came back null. Unrecorded, never blank.
+    batchId: "7b52ce16-0000-4000-8000-000000000008",
+    runId: null,
+    firstRunAt: ago(96 * HOUR),
+    lastProgressAt: ago(96 * HOUR),
+    queries: 2,
+    cities: [],
+    niches: [],
+    businessesNew: 6,
+    sightingsKnown: 1,
+    saturatedQueries: 0,
+    states: runs({ completed: 2 }),
+  },
+];
 
 function Section({
   title,
@@ -154,6 +302,39 @@ export default function KitchenSink() {
           </p>
         </Section>
 
+        <Section title="Sweep standing — the same question, one rung up">
+          <div className="flex flex-wrap gap-2">
+            {standings.map(([standing]) => (
+              <SweepStandingPill key={standing} standing={standing} />
+            ))}
+          </div>
+          <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[auto_auto_1fr]">
+            {standings.map(([standing, meta]) => (
+              <div key={standing} className="contents">
+                <dt className="text-text-2">{meta.label}</dt>
+                <dd className="text-text-3">{meta.outlook}</dd>
+                <dd className="text-text-3">{meta.note}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">A run is aborted; the sweep is stopped.</span>{" "}
+            Different words for different units, on purpose — a reader scanning a dense
+            table should never have to work out which one a pill is talking about. The
+            order above is the ranking, and the ranking is the whole decision: terminal
+            beats in-flight, in-flight beats every ending, and not knowing beats a query
+            that failed and was carried past.
+          </p>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">The middle column is the one that matters.</span>{" "}
+            Color says how bad; <code className="font-mono">outlook</code> says whether
+            anything else is coming. <span className="text-text-2">unknown</span> covers
+            two silences a row cannot tell apart and must not pretend to — a stalled run,
+            and a run holding a state this build has never seen — so it gets no color,
+            same as <span className="text-text-2">stalled</span> above.
+          </p>
+        </Section>
+
         <Section title="Identity is not status">
           <div className="flex flex-wrap items-center gap-2">
             <Badge>default</Badge>
@@ -226,7 +407,7 @@ export default function KitchenSink() {
               />
             </Frame>
 
-            <Frame label="no active route — this page, and the splash">
+            <Frame label="no active route — this page. `/` redirects to /sweeps.">
               <TopBarChrome
                 className="static"
                 nav={<NavLinksView pathname="/kitchen-sink" />}
@@ -403,6 +584,63 @@ export default function KitchenSink() {
               </DetailLayout>
             </Frame>
           </div>
+        </Section>
+
+        <Section title="Sweep index — the dense table">
+          <div className="space-y-2">
+            <SweepCount
+              page={{ rows: SWEEP_FIXTURES, total: SWEEP_FIXTURES.length }}
+            />
+            <div className="rounded-md border border-hairline">
+              <SweepTable
+                page={{ rows: SWEEP_FIXTURES, total: SWEEP_FIXTURES.length }}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">
+              Rows two and three carry identical numbers, and that is the point.
+            </span>{" "}
+            The areas after an abort leave no rows at all, so a sweep that stopped and one
+            still going hold the same count of runs, the same new, the same sightings.
+            Shape cannot separate them — the rendering has to, three times over: the pill,
+            the outlook under the timestamp, and the vermilion rule down the left of a row
+            that stopped. Terminal has to look terminal.
+          </p>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">
+              &ldquo;7 of 12&rdquo; is saturation, never progress.
+            </span>{" "}
+            The only ratio on this page divides the rows by the rows. A batch has no size
+            — no denominator, no progress bar, no &ldquo;12 of 20&rdquo; — because
+            nothing in this database knows how many areas were planned. Row six is short
+            by one: five counted states over six runs means one run holds a word this
+            build has never seen, and it says <span className="text-text-2">1
+            unrecognised</span> rather than reading as complete.
+          </p>
+          <div className="space-y-2">
+            <p className="text-xs text-text-3">
+              Truncated, which is the discipline every list statement here keeps:
+            </p>
+            <SweepCount page={{ rows: SWEEP_FIXTURES, total: 412 }} />
+          </div>
+        </Section>
+
+        <Section title="Sweep index — its four pending states">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SweepsEmpty />
+            <SweepsLoading />
+            <LowDataNotice n={1} noun="sweep" />
+            <SweepsFailed />
+          </div>
+          <p className="text-xs text-text-3">
+            The same components the page renders, not a second set of words that can drift
+            from them. <span className="text-text-2">Empty is not failed:</span> one says
+            discovery has never recorded a run, the other says we could not ask — and the
+            failed card carries no reason because there is none to carry. A connection
+            error&rsquo;s message can echo the URL that produced it, so the log gets the
+            error&rsquo;s name and the operator gets the card.
+          </p>
         </Section>
       </div>
     </>

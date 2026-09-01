@@ -95,6 +95,34 @@ lives in `badge.tsx` and on `/kitchen-sink`, not in each view.
 - A run's `running` is not a view's *loading*. One is what the data says, the other is
   what the page is doing, and both appear on the same screen.
 
+## A sweep's standing — the second word, one rung up
+
+A sweep is a `batch_id` grouping runs, so one row of the index holds five state counts and
+needs one word. Ranking them is a **rendering** decision — the read layer returns the five
+numbers precisely so it does not have to hold an opinion. That opinion is made once, in
+`sweepStanding` (`derive.ts`), and paired with a severity once, in `status-pill.tsx`.
+**No view re-ranks it**, exactly as no view re-derives `run_state`.
+
+| standing | when | renders as |
+| -- | -- | -- |
+| `stopped` | any run `aborted` — terminal, and it outranks everything | fail |
+| `in-flight` | any run `running` — no ending here is final yet | info |
+| `unknown` | any run `stalled`, **or** the counts do not add up to `queries` | **no colour** |
+| `degraded` | any run `errored`; every query ended, the sweep carried on | warn |
+| `settled` | every run `completed` | ok |
+
+- **A run is `aborted`; the sweep that holds it is `stopped`.** Different words for
+  different units, deliberately — nobody scanning a dense table should have to work out
+  which unit a pill is talking about.
+- **Terminal has to look terminal, because shape cannot say it.** The areas after an abort
+  leave no rows at all, so a stopped sweep and a live one hold the same run count and the
+  same numbers inside it. `/sweeps` separates them three times over: the pill, an outlook
+  line under the timestamp (`final` / `still moving` / `nothing since`), and a vermilion
+  rule down the left of a stopped row.
+- **The counts must add up.** A run whose `state` is a word this build does not recognise
+  falls into none of the five, so the row prints `1 unrecognised` and the standing drops to
+  `unknown` — never a row that reads as complete while it is short by one.
+
 ## Design language (enforced by `src/app/globals.css` — read it)
 
 - Dark-first, dark-only for now. Near-black base, elevated surfaces one notch
@@ -121,6 +149,14 @@ lives in `badge.tsx` and on `/kitchen-sink`, not in each view.
   by the token layer. A component may also gain variants that encode a vocabulary from
   this file — `Badge`'s status set is the one that exists — but never raw colors, and
   never a variant that puts purple on a state.
+- **A view is split from its fetch**: `SweepTable` takes rows, `SweepIndex` awaits them.
+  That is what lets `/kitchen-sink` render the states the database has never produced —
+  and a view that can only be seen with the right rows in the database is a view whose
+  rare states never get looked at. Its pending states are exported too, so the sink shows
+  the copy the page renders rather than a second set of words that can drift.
+- **URLs.** `/` is a routing fact, not a page: `next.config.ts` redirects it to `/sweeps`.
+  `/sweeps/<id>` takes **either** a `batch_id` or, for an unbatched one-off, a `run_id` —
+  `listSweepRuns` and `getRun` already answer both, and the sweep index links to it that way.
 - Keep it small. This app looks at things; the thinking happens elsewhere.
 
 @AGENTS.md
