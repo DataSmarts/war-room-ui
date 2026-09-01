@@ -87,6 +87,18 @@ lives in `badge.tsx` and on `/kitchen-sink`, not in each view.
 - **`error` and `aborted_reason` are scars, not statuses.** Neither is cleared by a
   later success, and both can carry a provider's raw response body. Keep them behind a
   disclosure — never in a list cell, never in metadata, never in a log.
+  - **One statement may name those columns**: `selectRunScars`, which reads one run. Every
+    list statement returns `has_error` / `has_aborted_reason` as booleans instead, and that
+    is the mechanism, not fastidiousness — a query that cannot select the column cannot leak
+    it, whatever a future view does with the row. Do not widen `RUN_COLUMNS` to "save a
+    round trip".
+  - **Nothing renders a scar without `readScar`.** It redacts, *then* truncates — the other
+    order can sever a key and leave the front half on screen — and states how much it cut.
+    This is a **second** layer: `places_sweep.py` already strips `key=` and `AIza…` at the
+    write. Neither layer may assume the other ran, because rows predate that regex and it
+    does not cover every credential shape. `containsSecret` is the canary; keep it passing.
+  - A view says a scar **exists** (`carries an error`, beside the pill and never instead of
+    it). The rail is the only place its text is asked for.
 - **The run is the unit of measurement. A batch is a grouping, not a thing with
   progress.** "Lawyers in California, top 50 neighborhoods" is composed in the operating
   half as one query per area and lands as 50 `runs` rows sharing a `batch_id` — a uuid,
@@ -157,6 +169,12 @@ numbers precisely so it does not have to hold an opinion. That opinion is made o
 - **URLs.** `/` is a routing fact, not a page: `next.config.ts` redirects it to `/sweeps`.
   `/sweeps/<id>` takes **either** a `batch_id` or, for an unbatched one-off, a `run_id` —
   `listSweepRuns` and `getRun` already answer both, and the sweep index links to it that way.
+- **A 404 has to answer 404.** Next returns a real 404 only for a *non-streamed* response, so
+  a page whose subject is an id (`/sweeps/[id]`) awaits its own read instead of sitting behind
+  `<Suspense>` — otherwise `notFound()` answers 200 with 404 markup, and a stale link reports
+  success. That is the same collapse `isUuid` exists to prevent. The loading state moves to
+  whatever on the page has its own read; there is a `not-found.tsx` so the 404 renders inside
+  the shell rather than as Next's OS-themed default.
 - Keep it small. This app looks at things; the thinking happens elsewhere.
 
 @AGENTS.md

@@ -1,4 +1,16 @@
 import {
+  RunRailFacts,
+  RunScarsFailed,
+  RunScarsLoading,
+  RunScarsView,
+} from "@/components/discovery/run-rail";
+import {
+  RunCount,
+  RunsFailed,
+  RunsLoading,
+  RunTable,
+} from "@/components/discovery/run-table";
+import {
   SweepCount,
   SweepsEmpty,
   SweepsFailed,
@@ -41,7 +53,8 @@ import {
 } from "@/components/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { SweepRow } from "@/lib/discovery/sql";
+import { redactSecrets, resultCount } from "@/lib/discovery/derive";
+import type { RunRow, SweepRow } from "@/lib/discovery/sql";
 import { EXPECTED_SCHEMA } from "@/lib/shell-status";
 
 const surfaces = [
@@ -189,6 +202,140 @@ const SWEEP_FIXTURES: SweepRow[] = [
     saturatedQueries: 0,
     states: runs({ completed: 2 }),
   },
+];
+
+/** One invented run. The defaults are an ordinary completed query; a case overrides what it is about. */
+function makeRun(over: Partial<RunRow> & Pick<RunRow, "runId" | "query">): RunRow {
+  return {
+    niche: "orthodontists",
+    city: "Sacramento",
+    neighborhood: "Midtown",
+    country: "US",
+    results: resultCount(37),
+    businessesMatched: 37,
+    businessesNew: 21,
+    businessesKnown: 16,
+    businessesWithWebPresence: 33,
+    completedAt: ago(3 * HOUR),
+    createdAt: ago(3 * HOUR),
+    updatedAt: ago(3 * HOUR),
+    state: "completed",
+    batchId: "3ad70e55-0000-4000-8000-000000000002",
+    lat: 38.5749,
+    lng: -121.4786,
+    hasNextPage: false,
+    hasError: false,
+    hasAbortedReason: false,
+    ...over,
+  };
+}
+
+/**
+ * The run states and result shapes the database has never held.
+ *
+ * Nothing in it is `aborted`, `errored`, `running` or `stalled`, and exactly one row in
+ * forty-three carries a scar — so every reading below except the first two is invented, and
+ * would otherwise never be looked at.
+ */
+const RUN_FIXTURES: RunRow[] = [
+  makeRun({
+    runId: "aa000001-0000-4000-8000-000000000001",
+    query: "orthodontists in Midtown, Sacramento, CA",
+    results: resultCount(60),
+    businessesMatched: 60,
+    businessesNew: 44,
+    businessesKnown: 16,
+    businessesWithWebPresence: 58,
+  }),
+  makeRun({
+    runId: "aa000002-0000-4000-8000-000000000002",
+    query: "orthodontists in Land Park, Sacramento, CA",
+    neighborhood: "Land Park",
+    results: resultCount(1),
+    businessesMatched: 1,
+    businessesNew: 1,
+    businessesKnown: 0,
+    businessesWithWebPresence: 1,
+  }),
+  makeRun({
+    runId: "aa000003-0000-4000-8000-000000000003",
+    query: "orthodontists in Curtis Park, Sacramento, CA",
+    neighborhood: "Curtis Park",
+  }),
+  makeRun({
+    // The trap, adjacent to the row above it: a scar AND an ending.
+    runId: "aa000004-0000-4000-8000-000000000004",
+    query: "orthodontists in East Sacramento, CA",
+    neighborhood: "East Sacramento",
+    hasError: true,
+  }),
+  makeRun({
+    runId: "aa000005-0000-4000-8000-000000000005",
+    query: "orthodontists in Oak Park, Sacramento, CA",
+    neighborhood: "Oak Park",
+    results: resultCount(0),
+    businessesMatched: 0,
+    businessesNew: 0,
+    businessesKnown: 0,
+    businessesWithWebPresence: 0,
+    completedAt: null,
+    state: "aborted",
+    hasAbortedReason: true,
+  }),
+  makeRun({
+    runId: "aa000006-0000-4000-8000-000000000006",
+    query: "orthodontists in Tahoe Park, Sacramento, CA",
+    neighborhood: "Tahoe Park",
+    completedAt: null,
+    state: "errored",
+    hasError: true,
+  }),
+  makeRun({
+    runId: "aa000007-0000-4000-8000-000000000007",
+    query: "orthodontists in Elmhurst, Sacramento, CA",
+    neighborhood: "Elmhurst",
+    completedAt: null,
+    updatedAt: ago(4 * MINUTE),
+    state: "running",
+    hasNextPage: true,
+  }),
+  makeRun({
+    runId: "aa000008-0000-4000-8000-000000000008",
+    query: "orthodontists in Colonial Village, Sacramento, CA",
+    neighborhood: "Colonial Village",
+    completedAt: null,
+    state: "stalled",
+  }),
+  makeRun({
+    // The view emitted a word this build has never seen. Drift, not a sixth state.
+    runId: "aa000009-0000-4000-8000-000000000009",
+    query: "orthodontists in Hollywood Park, Sacramento, CA",
+    neighborhood: "Hollywood Park",
+    completedAt: null,
+    state: null,
+  }),
+];
+
+const RUN_PAGE = { rows: RUN_FIXTURES, total: RUN_FIXTURES.length };
+
+/**
+ * A fake key, and it has never been a credential.
+ *
+ * It is here because a redaction with nothing unsafe to chew on demonstrates nothing — and
+ * because this repo is public, which is the reason the function exists at all.
+ */
+const FAKE_KEY = "AIzaSyFAKE0000000000000000000000000000";
+
+const SCAR_FIXTURE = {
+  error: `HTTP 400: {"error":{"code":400,"status":"INVALID_ARGUMENT","message":"Request contains an invalid argument.","details":[{"request":"https://places.googleapis.com/v1/places:searchText?key=${FAKE_KEY}&fields=places.id"}]}}`,
+  abortedReason: null,
+};
+
+/** The two patterns, shown on strings short enough to read. */
+const REDACTION_DEMO = [
+  `?key=${FAKE_KEY}&fields=id`,
+  "Authorization: Bearer sk-abcdef0123456789",
+  `denied for ${FAKE_KEY}`,
 ];
 
 function Section({
@@ -624,6 +771,164 @@ export default function KitchenSink() {
             </p>
             <SweepCount page={{ rows: SWEEP_FIXTURES, total: 412 }} />
           </div>
+        </Section>
+
+        <Section title="Run detail — one sweep's queries">
+          <div className="space-y-2">
+            <RunCount page={RUN_PAGE} />
+            <div className="rounded-md border border-hairline">
+              <RunTable
+                page={RUN_PAGE}
+                basePath="/kitchen-sink"
+                selected="aa000003-0000-4000-8000-000000000003"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">
+              Row four carries an error and is still completed.
+            </span>{" "}
+            <code className="font-mono">completed_at</code> is the authority — the{" "}
+            <code className="font-mono">run_state</code> view tests it first, so a query
+            that failed once and later succeeded reads as finished with the scar named
+            beneath it. A scar is not a status, and no later success ever clears one. Put
+            it beside row three, which is the same query with nothing to carry.
+          </p>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">
+              Row one returned 60 and reads <code className="font-mono">60+</code>.
+            </span>{" "}
+            Google caps a text search at sixty, so a full page is a floor and the area
+            holds more — never chart it, never sum it. Row two returned 1 and reads{" "}
+            <span className="text-text-2">thin</span>: the niche may not be there, or the
+            query string in the first column is wrong. Row nine holds a state this build
+            has never seen and says <span className="text-text-2">unrecognised</span>,
+            with no colour.
+          </p>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">Selection lives in the URL.</span> The purple
+            rule marks the selected row — identity, not status; the vermilion rule on the
+            sweep index means something entirely different and never appears here.
+          </p>
+        </Section>
+
+        <Section title="Run detail — the abort notice">
+          <div className="space-y-1 rounded-md border border-status-fail/40 bg-surface-1 p-3 text-xs">
+            <p className="font-medium text-text-2">This sweep stopped here.</p>
+            <p className="text-text-3">
+              It aborted at{" "}
+              <span className="font-mono text-text-2">
+                orthodontists in Oak Park, Sacramento, CA
+              </span>
+              , and the areas after it left no rows at all — so this list is what ran, not
+              what was planned.{" "}
+              <span className="text-text-2 underline decoration-hairline underline-offset-4">
+                Open that query
+              </span>{" "}
+              to read the reason.
+            </p>
+          </div>
+          <p className="text-xs text-text-3">
+            It names the query and never the reason: an abort reason is a scar and can
+            carry a provider&rsquo;s response body, so its text stays behind the
+            rail&rsquo;s disclosure. Keyed on the derived state rather than on{" "}
+            <code className="font-mono">aborted_reason is not null</code> — a run that
+            carries the scar and later completed stopped nothing.
+          </p>
+        </Section>
+
+        <Section title="Run detail — the rail">
+          {/* 20rem, because that is what `DetailLayout` gives the rail. A rail fixture shown at
+              page width is a picture of the component rather than the component. */}
+          <div className="flex flex-wrap items-start gap-3">
+            <Frame
+              label="a run, from the row the table already holds — no second read"
+              className="w-80 max-w-full"
+            >
+              <div className="p-3">
+                <RunRailFacts row={RUN_FIXTURES[6]!} />
+              </div>
+            </Frame>
+            <Frame
+              label="its scars — redacted, truncated, behind a disclosure"
+              className="w-80 max-w-full"
+            >
+              <div className="p-3">
+                <RunScarsView scars={SCAR_FIXTURE} />
+              </div>
+            </Frame>
+            <div className="w-80 max-w-full space-y-3">
+              <Frame label="asked, and there is none">
+                <div className="p-3">
+                  <RunScarsView scars={{ error: null, abortedReason: null }} />
+                </div>
+              </Frame>
+              <Frame label="still asking / could not ask">
+                <div className="space-y-2 p-3">
+                  <RunScarsLoading />
+                  <RunScarsFailed />
+                </div>
+              </Frame>
+            </div>
+          </div>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">
+              &ldquo;No scars&rdquo; is not &ldquo;could not read&rdquo;.
+            </span>{" "}
+            Forty-two of forty-three runs are the third card: we asked, and the run
+            recorded neither an error nor an abort reason. That is a fact about the run.
+            The fourth is the other thing entirely — and it is why the scar read has its
+            own boundary rather than sharing the page&rsquo;s.
+          </p>
+        </Section>
+
+        <Section title="Redaction — the second layer">
+          <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            {REDACTION_DEMO.map((before) => (
+              <div key={before} className="contents">
+                <dt className="font-mono break-all text-text-3">{before}</dt>
+                <dd className="font-mono break-all text-text-2">
+                  {redactSecrets(before)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">
+              The parameter name survives; the value does not.
+            </span>{" "}
+            &ldquo;The URL had a key in it&rdquo; is itself information, and an error
+            stripped down to nothing is an error nobody can act on. Every key above is
+            visibly fake and none has ever been a credential.
+          </p>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">This is the second layer, not the first.</span>{" "}
+            The writing tool already strips both patterns at the only place either column
+            is written. This one exists anyway: rows predate that regex, it does not cover
+            every shape a credential takes, and a public repo cannot rest a safety claim on
+            a private repo&rsquo;s regex. Neither layer is allowed to assume the other ran.
+          </p>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">Redact, then truncate.</span> The other order can
+            sever a key and leave the front half on screen — the one failure mode where
+            doing less work would have been safer. A cut that lands inside the placeholder
+            drops the fragment, and the rail says how many characters it is not showing.
+          </p>
+        </Section>
+
+        <Section title="Run detail — its pending states">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <RunsLoading />
+            <RunsFailed />
+            <LowDataNotice n={3} noun="query" plural="queries" />
+          </div>
+          <p className="text-xs text-text-3">
+            No empty card, deliberately: a batch exists because runs exist, so a sweep with
+            no queries is not a state this page can reach. An id that matches nothing is a{" "}
+            <span className="text-text-2">404</span> — the page awaits its read so the
+            status line can say so, which is why the skeleton above belongs to the rail and
+            to this page rather than to the table.
+          </p>
         </Section>
 
         <Section title="Sweep index — its four pending states">
