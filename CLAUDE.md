@@ -51,6 +51,52 @@ Linear document wins.
 - Secrets: as many as the UI needs, provider keys included — in env, never committed,
   never logged. The blast radius is the `ui` role's grant, not the number of keys.
 
+## The way in — passwordless, and what it knowingly accepts
+
+Six digits from an authenticator. **There is no password anywhere in this repo** — no
+`ADMIN_PASSWORD`, no credential compare, nothing to phish or reuse. When the phone is lost, a
+one-time code goes to **Telegram**, which is the only delivery channel this system already has
+and needs no new provider, domain or secret. `src/lib/auth/` holds all of it.
+
+- **Two gates, and neither is optional.** `src/proxy.ts` reads the cookie and redirects — Next's
+  own guide calls that an *optimistic* check and says it must not be the only one.
+  `requireSession()` in `src/app/(shell)/layout.tsx` is the real one, in the render path of every
+  view that reads Neon. Add a route outside `(shell)` and you have added a door.
+- **Fail closed, always.** `sign("")` is a valid signature under a key everybody knows, so an
+  unset secret that fell through as `undefined` would turn the login into a doorway while every
+  test still passed. `secrets.ts` is the only module that reads `process.env`; absent or under 32
+  characters reads as `null`, `null` denies every route, and the log says which one is missing —
+  never its value. **Never give a secret a fallback value.**
+- **Everything else takes its secrets as parameters.** `token.ts`, `totp.ts` and `sessions.ts`
+  are pure, which is what lets `node --test` check the crypto against RFC 6238's own vectors with
+  no server, no clock and no environment. Keep them that way.
+- **The fallback's attempt counter is advisory, and the file says so.** State the client holds is
+  state the client can rewind: replaying a saved `attempts: 0` cookie restores the count, and no
+  signature can prevent it because that cookie is one we really signed. What bounds guessing is
+  the code's ~38 bits inside a 10-minute window. **Do not "harden" the five** — it is not the
+  number doing the work. If that ever stops being enough, the answer is a table and a write grant
+  in the private repo's migration sequence, not a bigger constant here.
+- **A TOTP code verifies twice inside its own 30-second window.** Replay protection needs
+  persistence the `ui` role does not have. Accepted: the code is typed by the operator over TLS,
+  so the exposure is a shoulder-surfed code inside 30 seconds.
+- **What the design accepts, on the record:** the authenticator secret is the *only* factor, and
+  possession of the Telegram chat is a complete bypass of it. That was chosen deliberately over
+  password + TOTP. It is a decision, not an oversight — do not "fix" it by adding a password.
+- **A code is never logged, never returned to the browser, never stored.** The challenge cookie
+  carries an HMAC of it, domain-separated from the token signature. Telegram failures log the
+  error's **name only** — the bot token sits in the request URL, so a message would carry the
+  credential into the log. Same rule as `db.ts`, same reason.
+- Sign-out is a **form, not a link**: no state mutation on GET, and a prefetch must never be able
+  to sign the operator out.
+- **The login's vocabulary is `LoginNotice`** (`lib/auth/notices.ts`), paired with a severity once
+  in `components/auth/login-form.tsx` — the same two-file split as `run_state` and
+  `sweepStanding`. Three notices carry **no colour**: `unconfigured`, `delivery-unknown` and
+  `fallback-unavailable` are absent knowledge, not negative answers. A wrong code is `fail`; a
+  lapsed or spent challenge is `warn`.
+- Enrol with `node scripts/totp-enrol.mts`. It prints and **writes nothing** — a script that
+  helpfully wrote the secret into a file would be one `git add -A` from publishing the only
+  factor guarding real firms' names and addresses.
+
 ## Honest state — the read-model's one vocabulary
 
 Discovery has **no status column** and never will: a process cannot write its own death

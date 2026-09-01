@@ -73,6 +73,11 @@
   /* Shell geometry. One value, because the sticky bar's height and the scroll offset that
    * keeps anchors out from under it have to agree — see the base layer below. */
   --shell-bar-h: 3rem;
+
+  /* The left rail's width. The detail rail on the right is ~18rem, so the two together leave a
+   * dense table more room than the full-width bar plus a rail did — the sidebar costs the table
+   * nothing a bar was not already taking, and it is the only place five modules fit. */
+  --shell-rail-w: 13rem;
 }
 
 @theme inline {
