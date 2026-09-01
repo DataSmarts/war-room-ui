@@ -2,6 +2,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import Link from "next/link";
 
+import { signOut } from "@/app/actions/auth";
 import { cn } from "@/lib/utils";
 
 import { ChipsSkeleton, ShellChips } from "./chips";
@@ -77,6 +78,27 @@ export function KitchenSinkLink() {
   );
 }
 
+/**
+ * A form, not a link, because signing out is a state change and this repo does not mutate on
+ * GET. It also means a prefetch can never sign the operator out — which a link here eventually
+ * would, on the day someone hovers the wrong thing.
+ *
+ * Styled down to the same weight as the kitchen-sink link: it is the least interesting control
+ * in the bar and should never compete with the nav.
+ */
+export function SignOutButton() {
+  return (
+    <form action={signOut} className="shrink-0">
+      <button
+        type="submit"
+        className="text-xs text-text-3 transition-colors hover:text-text-2"
+      >
+        sign out
+      </button>
+    </form>
+  );
+}
+
 export function TopBar() {
   return (
     <TopBarChrome
@@ -98,6 +120,7 @@ export function TopBar() {
             <ShellChips />
           </Suspense>
           <KitchenSinkLink />
+          <SignOutButton />
         </>
       }
     />

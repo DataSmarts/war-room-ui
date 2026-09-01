@@ -98,6 +98,8 @@ import {
   type WebPresence,
 } from "@/lib/discovery/derive";
 import type { BusinessRow, RunRow, SightingRow, SweepRow } from "@/lib/discovery/sql";
+import { LoginFormView, LoginNoticeLine } from "@/components/auth/login-form";
+import { LOGIN_IDLE, LOGIN_NOTICE_VALUES } from "@/lib/auth/notices";
 import { EXPECTED_SCHEMA } from "@/lib/shell-status";
 
 const surfaces = [
@@ -1387,6 +1389,67 @@ export default function KitchenSink() {
             holds the business&rsquo;s <span className="font-mono">new</span> credit
             permanently. A scar is named beside the pill and never instead of it — its text
             lives one link away, in the run&rsquo;s own rail.
+          </p>
+        </Section>
+
+        <Section title="Login — the two questions">
+          <div className="flex flex-wrap gap-4">
+            <Frame label="authenticator — idle" className="w-72">
+              <div className="p-3">
+                <LoginFormView state={LOGIN_IDLE} preview />
+              </div>
+            </Frame>
+            <Frame label="authenticator — checking" className="w-72">
+              <div className="p-3">
+                <LoginFormView state={LOGIN_IDLE} pending preview />
+              </div>
+            </Frame>
+            <Frame label="fallback — asked for" className="w-72">
+              <div className="p-3">
+                <LoginFormView
+                  state={{ mode: "fallback", notice: "code-sent" }}
+                  preview
+                />
+              </div>
+            </Frame>
+            <Frame label="authenticator — no fallback configured" className="w-72">
+              <div className="p-3">
+                <LoginFormView state={LOGIN_IDLE} fallbackAvailable={false} preview />
+              </div>
+            </Frame>
+          </div>
+
+          <p className="max-w-prose text-xs text-text-3">
+            Passwordless: six digits from an authenticator, and no password field to phish. The
+            fallback is the same screen asking a different question, so a wrong turn costs a
+            click rather than a navigation and the{" "}
+            <span className="font-mono">next</span> the operator was heading for rides through
+            every state in a hidden field. Purple appears exactly once, on the one primary
+            action — never on an outcome.
+          </p>
+        </Section>
+
+        <Section title="Login — every outcome it can report">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {LOGIN_NOTICE_VALUES.map((notice) => (
+              <div key={notice} className="space-y-1">
+                <p className="font-mono text-xs text-text-3">{notice}</p>
+                <LoginNoticeLine notice={notice} />
+              </div>
+            ))}
+          </div>
+
+          <p className="max-w-prose text-xs text-text-3">
+            The same axis as everywhere else, on a screen that has no database behind it. A
+            wrong code is a real negative answer and takes{" "}
+            <span className="text-status-fail">fail</span>; a lapsed or spent challenge is
+            recoverable and takes <span className="text-status-warn">warn</span>; a code on its
+            way is <span className="text-status-info">info</span>. The three that carry{" "}
+            <span className="text-text-2">no colour</span> are the ones where we do not know:
+            the server has no secret it can read, Telegram never confirmed the message, or there
+            is nowhere to send one. Absence of colour is absence of knowledge — the same rule
+            that leaves <span className="font-mono">stalled</span> undecorated, and the copy here
+            is the copy the login page renders rather than a second set that can drift.
           </p>
         </Section>
       </div>
