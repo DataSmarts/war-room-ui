@@ -1,13 +1,28 @@
 import { Badge } from "@/components/ui/badge";
-import { RUN_STATE_VALUES, type RunState } from "@/lib/discovery/derive";
+import {
+  RUN_STATE_VALUES,
+  SWEEP_STANDING_VALUES,
+  type RunState,
+  type SweepStanding,
+} from "@/lib/discovery/derive";
+
+/**
+ * Where a word is paired with a severity — for both vocabularies, and nowhere else.
+ *
+ * The words themselves live in `lib/discovery/derive.ts`: `RunState` because it is what the
+ * `run_state` view emits and the read layer is what has to recognise it, `SweepStanding` because
+ * ranking five counts into one word is a decision that must be made once. What lives *here* is
+ * only the pairing with a colour, keyed on those types so the two cannot drift: adding a word
+ * without a rendering stops compiling.
+ *
+ * Severity is the colour axis in both. Nothing here is ever purple — purple is identity.
+ */
+
+/** The four severities and the deliberate absence of one. `Badge`'s status variants, exactly. */
+type Severity = "ok" | "warn" | "fail" | "info" | "unknown";
 
 /**
  * The run-state vocabulary's one rendering.
- *
- * The vocabulary itself lives in `lib/discovery/derive.ts`, next to the code that narrows the
- * view's text into it — it is a fact about the database, and the read layer is what has to
- * recognise it. What lives here is the pairing of each word with a severity, keyed on that type
- * so the two cannot drift: adding a state without a rendering stops compiling.
  *
  * Listed in the `run_state` view's own evaluation order, so this file reads against the SQL
  * rather than offering a second opinion about it. **That order is itself the answer to a
@@ -18,14 +33,11 @@ import { RUN_STATE_VALUES, type RunState } from "@/lib/discovery/derive";
  * The mapping lives here and only here. A view writes `<StatusPill state={row.state} />`
  * and cannot pair the wrong word with the wrong severity.
  *
- * Severity is the colour axis, the word is the state: degraded (one query lost) is warn,
- * stopped (the sweep died) is fail. `stalled` gets no colour at all — it is absent
- * knowledge, and a hue would be a claim we cannot back.
+ * Severity is the colour axis, the word is the state: one query lost is warn, the sweep
+ * stopped is fail. `stalled` gets no colour at all — it is absent knowledge, and a hue
+ * would be a claim we cannot back.
  */
-export const RUN_STATES: Record<
-  RunState,
-  { variant: "ok" | "warn" | "fail" | "info" | "unknown"; note: string }
-> = {
+export const RUN_STATES: Record<RunState, { variant: Severity; note: string }> = {
   completed: { variant: "ok", note: "finished — even when error is set" },
   aborted: { variant: "fail", note: "the sweep stopped here, and recorded why" },
   errored: { variant: "warn", note: "this query failed; the sweep carried on" },
@@ -33,7 +45,7 @@ export const RUN_STATES: Record<
   stalled: { variant: "unknown", note: "no ending, no reason, nothing moved" },
 };
 
-export type { RunState };
+export type { RunState, SweepStanding };
 
 export const RUN_STATE_ORDER: readonly RunState[] = RUN_STATE_VALUES;
 
@@ -47,6 +59,86 @@ export function StatusPill({
   return (
     <Badge variant={RUN_STATES[state].variant} className={className}>
       {state}
+    </Badge>
+  );
+}
+
+/**
+ * A whole sweep's standing — the second vocabulary, one rung up from a run.
+ *
+ * The severities are the same four plus the same absence, because they answer the same question
+ * about a bigger unit: `stopped` is the sweep's `aborted`, `degraded` is its `errored`. What is
+ * **not** the same is the word, and that is the point — a run is aborted, the sweep that holds it
+ * stopped, and a reader looking at a dense table should never have to work out which unit a pill
+ * is talking about.
+ *
+ * `unknown` covers two different silences that a row cannot tell apart and must not pretend to:
+ * a stalled run, and a run whose state is a word this build does not recognise. Both mean the
+ * same thing to a reader — we cannot say — so both get the hollow ring and no colour.
+ *
+ * `outlook` is the second axis, and it is the one that does the real work in a list. A colour
+ * says how bad; `outlook` says **whether anything else is coming** — and that is the difference
+ * a sweep index cannot afford to blur, because a stopped sweep and a live one hold the same
+ * number of rows and the same numbers in them (§5.6). Terminal must look terminal.
+ *
+ * The order below is the ranking `sweepStanding` applies, so this file reads against that
+ * function rather than offering a second opinion about it.
+ */
+export const SWEEP_STANDINGS: Record<
+  SweepStanding,
+  {
+    variant: Severity;
+    label: string;
+    /** Is anything else coming? The three honest answers, and no fourth. */
+    outlook: "final" | "still moving" | "nothing since";
+    note: string;
+  }
+> = {
+  stopped: {
+    variant: "fail",
+    label: "stopped",
+    outlook: "final",
+    note: "it hit an abort and recorded why — nothing more is coming",
+  },
+  "in-flight": {
+    variant: "info",
+    label: "in flight",
+    outlook: "still moving",
+    note: "a page landed in the last 10 min; no conclusion is final yet",
+  },
+  degraded: {
+    variant: "warn",
+    label: "degraded",
+    outlook: "final",
+    note: "every query ended; at least one failed, and the sweep carried on",
+  },
+  settled: {
+    variant: "ok",
+    label: "settled",
+    outlook: "final",
+    note: "every query completed",
+  },
+  unknown: {
+    variant: "unknown",
+    label: "unknown",
+    outlook: "nothing since",
+    note: "nothing has moved, or a run holds a state this build cannot read",
+  },
+};
+
+export const SWEEP_STANDING_ORDER: readonly SweepStanding[] = SWEEP_STANDING_VALUES;
+
+export function SweepStandingPill({
+  standing,
+  className,
+}: {
+  standing: SweepStanding;
+  className?: string;
+}) {
+  const { variant, label } = SWEEP_STANDINGS[standing];
+  return (
+    <Badge variant={variant} className={className}>
+      {label}
     </Badge>
   );
 }

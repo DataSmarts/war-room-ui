@@ -11,6 +11,11 @@
  * state from facts; this file only recognises what it said. There is no second opinion about the
  * predicates in this repo and there is not meant to be one.
  *
+ * The fifth is one rung up: a sweep is a *grouping* of runs, so rolling their states into a
+ * single word for one row of the sweep index is a ranking, and a ranking is an opinion. Held
+ * here, once, for the same reason as the rest — and not to be confused with re-deriving a run's
+ * state, which nothing in this repo does.
+ *
  * **No imports, deliberately.** `node --test` runs this file with nothing but type stripping — no
  * bundler, no renderer, no database — which is what makes the table beside it possible.
  */
@@ -50,6 +55,67 @@ export function runStateOf(value: string | null | undefined): RunState | null {
     (RUN_STATE_VALUES as readonly string[]).includes(value)
     ? (value as RunState)
     : null;
+}
+
+/**
+ * What a whole sweep amounts to, in one word.
+ *
+ * A sweep is a `batch_id` grouping some number of runs, each with its own state — so a row in the
+ * sweep index holds five numbers and needs one word. Concluding that word is a **rendering**
+ * decision, not a database fact: `sql.ts` returns the five counts precisely because ranking
+ * `aborted` above `errored` is an opinion, and the read layer does not get to hold it. This is
+ * where the opinion is held, once, so no view arrives at its own.
+ *
+ * The words are deliberately not the run vocabulary's. A run is `aborted`; the sweep that
+ * contains it is `stopped`. Nothing here can be confused with a `RunState` at a glance or in a
+ * `switch`, which is the point — they are different questions about different units.
+ */
+export const SWEEP_STANDING_VALUES = [
+  "stopped",
+  "in-flight",
+  "degraded",
+  "settled",
+  "unknown",
+] as const;
+
+export type SweepStanding = (typeof SWEEP_STANDING_VALUES)[number];
+
+/**
+ * The five counts, ranked — and the ranking is the argument.
+ *
+ * In order, each rank earning its place over the one below it:
+ *
+ * 1. **The counts must add up.** `sql.ts` counts each state by name, so a run whose `state` is a
+ *    word we do not recognise is counted in none of them and the five sum short of `queries`.
+ *    That is schema drift, and a row must not conclude anything about runs it cannot read —
+ *    `unknown`, and the schema chip says why.
+ * 2. **`stopped` beats everything.** An abort is terminal: the sweep stopped there, said why, and
+ *    the areas after it left no rows at all (§5.6). Nothing further is coming.
+ * 3. **`in-flight` beats every ending**, because it is not one. A page landed inside the window,
+ *    so no conclusion about this sweep is final yet.
+ * 4. **`unknown` beats `degraded`.** A stalled run has no ending and no reason and nothing has
+ *    moved — we do not know whether the sweep is over. Absent knowledge outranks a query that
+ *    failed and was carried past, because the second is a fact and the first is the lack of one.
+ * 5. **`degraded`** — every query ended, at least one failed, the sweep carried on.
+ * 6. **`settled`** — every query completed.
+ *
+ * `queries` is passed rather than summed so rank 1 can exist at all: it is the count of rows the
+ * group actually holds, and comparing it against the five is the only way to see a state we
+ * cannot read. A group with no rows cannot happen, and if it did, "every query completed" would
+ * be a claim about nothing — so it is `unknown` too.
+ */
+export function sweepStanding(
+  states: Record<RunState, number>,
+  queries: number,
+): SweepStanding {
+  const counted = RUN_STATE_VALUES.reduce((sum, state) => sum + states[state], 0);
+  if (queries < 1 || counted !== queries) return "unknown";
+
+  if (states.aborted > 0) return "stopped";
+  if (states.running > 0) return "in-flight";
+  if (states.stalled > 0) return "unknown";
+  if (states.errored > 0) return "degraded";
+  return "settled";
 }
 
 /**

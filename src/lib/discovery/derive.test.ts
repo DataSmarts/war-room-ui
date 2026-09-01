@@ -8,10 +8,13 @@ import {
   resultCount,
   RUN_STATE_VALUES,
   runStateOf,
+  SWEEP_STANDING_VALUES,
+  sweepStanding,
   webPresence,
   type CheckState,
   type ResultCount,
   type RunState,
+  type SweepStanding,
   type WebPresence,
 } from "./derive.ts";
 
@@ -61,6 +64,96 @@ test("every value the view can emit has a case above", () => {
     RUN_STATE_CASES.filter((c) => c.expected !== null).map((c) => c.expected),
   );
   assert.deepEqual([...covered].sort(), [...RUN_STATE_VALUES].sort());
+});
+
+// --- sweepStanding ---------------------------------------------------------------------------
+
+/** Only the states a case cares about; the rest are nought. */
+function runs(states: Partial<Record<RunState, number>>): Record<RunState, number> {
+  return { completed: 0, aborted: 0, errored: 0, running: 0, stalled: 0, ...states };
+}
+
+const SWEEP_STANDING_CASES: ReadonlyArray<{
+  states: Partial<Record<RunState, number>>;
+  queries: number;
+  expected: SweepStanding;
+  why: string;
+}> = [
+  {
+    states: { completed: 3 },
+    queries: 3,
+    expected: "settled",
+    why: "every query completed — the only case that earns the word",
+  },
+  {
+    states: { completed: 11, aborted: 1 },
+    queries: 12,
+    expected: "stopped",
+    why: "an abort is terminal; the areas after it left no rows at all",
+  },
+  {
+    states: { completed: 11, aborted: 1, running: 1 },
+    queries: 13,
+    expected: "stopped",
+    why: "terminal outranks in-flight — the sweep stopped and said why",
+  },
+  {
+    states: { completed: 11, running: 1 },
+    queries: 12,
+    expected: "in-flight",
+    why: "a page landed inside the window, so no conclusion is final yet",
+  },
+  {
+    states: { completed: 11, running: 1, errored: 1, stalled: 1 },
+    queries: 14,
+    expected: "in-flight",
+    why: "still moving beats both a scar and a silence",
+  },
+  {
+    states: { completed: 11, stalled: 1 },
+    queries: 12,
+    expected: "unknown",
+    why: "no ending, no reason, nothing moved — we do not know whether it is over",
+  },
+  {
+    states: { completed: 10, stalled: 1, errored: 1 },
+    queries: 12,
+    expected: "unknown",
+    why: "absent knowledge outranks a query that failed and was carried past",
+  },
+  {
+    states: { completed: 11, errored: 1 },
+    queries: 12,
+    expected: "degraded",
+    why: "every query ended, one failed, the sweep carried on",
+  },
+  {
+    states: { completed: 11 },
+    queries: 12,
+    expected: "unknown",
+    why: "one run's state is a word we do not recognise — drift, not a twelfth completion",
+  },
+  {
+    states: {},
+    queries: 0,
+    expected: "unknown",
+    why: "cannot happen — and 'every query completed' over no queries is a claim about nothing",
+  },
+];
+
+test("sweepStanding ranks five numbers into one word, and says so", () => {
+  for (const { states, queries, expected, why } of SWEEP_STANDING_CASES) {
+    assert.equal(
+      sweepStanding(runs(states), queries),
+      expected,
+      `${JSON.stringify(states)} of ${queries} — ${why}`,
+    );
+  }
+});
+
+test("every standing a row can carry has a case above", () => {
+  const covered = new Set(SWEEP_STANDING_CASES.map((c) => c.expected));
+  assert.deepEqual([...covered].sort(), [...SWEEP_STANDING_VALUES].sort());
 });
 
 // --- resultCount -----------------------------------------------------------------------------
