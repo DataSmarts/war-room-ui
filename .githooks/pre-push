@@ -44,3 +44,38 @@ if [ "${#stale[@]}" -gt 0 ]; then
   echo "Run ./encrypt-env.sh, then git add/commit the .enc file(s) before pushing." >&2
   exit 1
 fi
+
+# The read layer's two guards. They degrade differently, on purpose.
+#
+# The tests are pure — no database, no network, no credential — so there is never a reason to
+# skip them, and a failure refuses the push.
+#
+# schema:check asks the database whether it still looks like what src/lib/discovery/schema.ts
+# says it looks like. That needs a network and a credential, and a push must not require either:
+# no DATABASE_URL (exit 2) or a database that cannot be reached (exit 3) warns and carries on,
+# the same way a missing sops does above. A database that ANSWERS and disagrees (exit 1) refuses
+# the push, because that is the whole reason the check exists.
+
+echo "pre-push: npm test" >&2
+if ! npm test --silent; then
+  echo "error: tests failed. Fix them before pushing." >&2
+  exit 1
+fi
+
+echo "pre-push: npm run schema:check" >&2
+set +e
+npm run schema:check --silent
+schema_status=$?
+set -e
+
+case "$schema_status" in
+  0) ;;
+  2 | 3)
+    echo "warning: schema:check could not run (exit $schema_status) — pushing without it." >&2
+    ;;
+  *)
+    echo "error: the database no longer matches src/lib/discovery/schema.ts." >&2
+    echo "Fix the read-model, or adopt the migration that moved it, before pushing." >&2
+    exit 1
+    ;;
+esac
