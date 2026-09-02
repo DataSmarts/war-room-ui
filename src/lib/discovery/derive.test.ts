@@ -5,7 +5,6 @@ import {
   CHECK_STATE_VALUES,
   checkState,
   containsSecret,
-  contactsCheck,
   httpHref,
   isUuid,
   PLACES_TEXT_SEARCH_CAP,
@@ -22,7 +21,6 @@ import {
   WEB_PRESENCE_VALUES,
   webPresence,
   type CheckState,
-  type ContactsCheck,
   type RatingReading,
   type ResultCount,
   type RunState,
@@ -295,40 +293,68 @@ test("every check state has a case above", () => {
   assert.deepEqual([...covered].sort(), [...CHECK_STATE_VALUES].sort());
 });
 
-// --- contactsCheck ---------------------------------------------------------------------------
+// --- contacts, through checkState since 008 ---------------------------------------------------
 
-const CONTACTS_CHECK_CASES: ReadonlyArray<{
+/**
+ * What stood here was a tripwire: contactsCheck must NEVER agree with `checkState(checkedAt,
+ * false)`, because claiming "none confirmed" meant claiming nobody was found, and the role could
+ * not see whether anyone was. Migration 008 granted `business_contact_counts` — a count per
+ * business, never a row — so the claim is one this half can now back, and contacts is read by the
+ * same function as socials.
+ *
+ * The shape of the old argument still has to hold, and this is what replaces the tripwire: **the
+ * count alone is not the answer.** A contacts run that met nothing but provider errors never
+ * stamps `contacts_checked_at`, so zero contacts *without* a timestamp is "never got an answer"
+ * and zero contacts *with* one is "looked, found nobody". Deriving contacts from either column on
+ * its own collapses two facts into one, which is the failure the two-state version was avoiding.
+ */
+const CONTACTS_CASES: ReadonlyArray<{
   checkedAt: Date | null;
-  expected: ContactsCheck;
+  found: number;
+  expected: CheckState;
   why: string;
 }> = [
   {
     checkedAt: CHECKED_AT,
-    expected: "checked",
-    why: "an enrichment ran — and what it found is NOT claimed, because this role cannot see the contacts table",
+    found: 2,
+    expected: "found",
+    why: "the enrichment ran and the count says how many — 590 live businesses",
+  },
+  {
+    checkedAt: CHECKED_AT,
+    found: 0,
+    expected: "none-confirmed",
+    why: "looked, found nobody — 296 live businesses, and the state 008 exists to make sayable",
   },
   {
     checkedAt: null,
+    found: 0,
     expected: "never-looked",
-    why: "nobody has looked; nothing is known either way",
+    why: "no answer ever came back. A count of zero cannot say this; the null timestamp does",
   },
 ];
 
-test("contactsCheck answers only the half of the question this role can see", () => {
-  for (const { checkedAt, expected, why } of CONTACTS_CHECK_CASES) {
-    assert.equal(contactsCheck(checkedAt), expected, `${checkedAt} — ${why}`);
+test("contacts reads the count and the timestamp, and neither one alone", () => {
+  for (const { checkedAt, found, expected, why } of CONTACTS_CASES) {
+    assert.equal(checkState(checkedAt, found > 0), expected, `${checkedAt} / ${found} — ${why}`);
   }
+
+  // Both inputs are load-bearing, and dropping either one gets a different case wrong.
+  assert.notEqual(
+    checkState(CHECKED_AT, false),
+    checkState(null, false),
+    "the timestamp is what separates 'found nobody' from 'never got an answer'",
+  );
+  assert.notEqual(
+    checkState(CHECKED_AT, true),
+    checkState(CHECKED_AT, false),
+    "the count is what separates 'found somebody' from 'found nobody'",
+  );
 });
 
-test("contactsCheck never reaches 'none confirmed', however tempting the shortcut is", () => {
-  // The failure this guards: someone "unifies" the two by calling `checkState(checkedAt, false)`,
-  // and 712 live businesses start claiming nobody was found by code that cannot see whether
-  // anyone was. The two functions must not agree on a checked business.
-  assert.equal(contactsCheck(CHECKED_AT), "checked");
-  assert.notEqual(
-    contactsCheck(CHECKED_AT) as string,
-    checkState(CHECKED_AT, false) as string,
-  );
+test("every contacts state has a case above", () => {
+  const covered = new Set(CONTACTS_CASES.map((c) => c.expected));
+  assert.deepEqual([...covered].sort(), [...CHECK_STATE_VALUES].sort());
 });
 
 // --- ratingReading ---------------------------------------------------------------------------

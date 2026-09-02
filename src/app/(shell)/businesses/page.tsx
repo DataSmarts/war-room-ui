@@ -101,12 +101,11 @@ export default async function BusinessesPage({
           <p className="max-w-prose text-xs text-text-3">
             <span className="text-text-2">Three states, not two.</span> A page on someone
             else&rsquo;s platform is a real web presence and not &ldquo;no site&rdquo;; a
-            socials check that found nobody is{" "}
+            socials or contacts check that found nobody is{" "}
             <span className="text-text-2">none confirmed</span>, which is a fact about the
-            business rather than a gap in ours. The contacts column can only say whether
-            anyone <em>looked</em> — what they found lives in a table this deploy cannot
-            read. And a rating always carries its review count, because a 5.0 from four
-            reviews is a sample, not a score.
+            business rather than a gap in ours — the contacts count comes from a view that
+            hands this deploy a number and never a name. And a rating always carries its
+            review count, because a 5.0 from four reviews is a sample, not a score.
           </p>
         </div>
       </DetailLayout>

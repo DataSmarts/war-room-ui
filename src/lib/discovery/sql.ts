@@ -4,7 +4,6 @@ import {
   CHECK_STATE_VALUES,
   PLACES_TEXT_SEARCH_CAP,
   checkState,
-  contactsCheck,
   isUuid,
   ratingReading,
   resultCount,
@@ -12,7 +11,6 @@ import {
   WEB_PRESENCE_VALUES,
   webPresence,
   type CheckState,
-  type ContactsCheck,
   type RatingReading,
   type ResultCount,
   type RunState,
@@ -383,6 +381,12 @@ export async function selectRunScars(
  *
  * `sightings` is a correlated subquery rather than a join so a business twelve areas returned
  * stays one row. `run_businesses(business_id)` is indexed (§9).
+ *
+ * `contacts_found` comes from `business_contact_counts` (008), which is a granted **count** over a
+ * table this role still cannot read a row of. It is joined rather than subqueried because it is
+ * already grouped one row per business. Its sibling column `graded` is deliberately not selected:
+ * nothing renders it, and a column no statement names is a column no future view can put on a
+ * screen by accident — the same reasoning that keeps `error` out of every list statement.
  */
 const BUSINESS_COLUMNS = `
        b.id                                                             as id,
@@ -405,8 +409,10 @@ const BUSINESS_COLUMNS = `
        b.updated_at                                                     as updated_at,
        (select count(*) from run_businesses rb
          where rb.business_id = b.id)::int                              as sightings,
+       coalesce(bcc.contacts, 0)                                        as contacts_found,
        (count(*) over ())::int                                          as total_businesses
 from businesses b
+left join business_contact_counts bcc on bcc.business_id = b.id
 `;
 
 /**
@@ -416,12 +422,13 @@ from businesses b
  * one plan to reason about, and it is the same text whether five filters are set or none. Values
  * reach Postgres bound, never interpolated.
  *
- * **The `web` and `socials` predicates are `webPresence` and `checkState` transcribed into SQL,**
- * and that duplication is the one real hazard in this file — a filter that disagrees with the
- * cell it filters on is invisible until someone counts. `schema:check` asserts the two agree on
- * live rows for every value of both vocabularies, so a drift refuses a push rather than shipping.
- * Note especially that `found` outranks the timestamp in both: a business holding a Facebook URL
- * reads `found` whatever `socials_checked_at` says, so `never-looked` has to exclude it here too.
+ * **The `web`, `socials` and `contacts` predicates are `webPresence` and `checkState` transcribed
+ * into SQL,** and that duplication is the one real hazard in this file — a filter that disagrees
+ * with the cell it filters on is invisible until someone counts. `schema:check` asserts they agree
+ * on live rows for every value of both vocabularies, so a drift refuses a push rather than
+ * shipping. Note especially that `found` outranks the timestamp in all three: a business holding a
+ * Facebook URL reads `found` whatever `socials_checked_at` says, and one holding a contact reads
+ * `found` whatever `contacts_checked_at` says, so `never-looked` has to exclude both here too.
  *
  * The sweep filter takes a `batch_id` **or** a `run_id`, the same either/or `/sweeps/<id>`
  * answers, so a sweep can link straight to what it found.
@@ -442,16 +449,24 @@ where ($1::text is null or b.name ilike '%' || $1::text || '%')
        or ($3 = 'never-looked'
            and b.socials_checked_at is null
            and num_nonnulls(b.facebook_url, b.instagram_url, b.x_url, b.linkedin_url) = 0))
-  and ($4::uuid is null or exists (
+  and ($4::text is null
+       or ($4 = 'found'          and coalesce(bcc.contacts, 0) > 0)
+       or ($4 = 'none-confirmed'
+           and b.contacts_checked_at is not null
+           and coalesce(bcc.contacts, 0) = 0)
+       or ($4 = 'never-looked'
+           and b.contacts_checked_at is null
+           and coalesce(bcc.contacts, 0) = 0))
+  and ($5::uuid is null or exists (
         select 1 from run_businesses rb
         join runs r on r.id = rb.run_id
-        where rb.business_id = b.id and (r.batch_id = $4::uuid or r.id = $4::uuid)))
-  and ($5::text is null or exists (
+        where rb.business_id = b.id and (r.batch_id = $5::uuid or r.id = $5::uuid)))
+  and ($6::text is null or exists (
         select 1 from run_businesses rb
         join runs r on r.id = rb.run_id
-        where rb.business_id = b.id and r.city = $5::text))
+        where rb.business_id = b.id and r.city = $6::text))
 order by b.name asc, b.id asc
-limit $6
+limit $7
 `;
 
 /** One business, by id. No filters: a rail's subject is not part of the list's question. */
@@ -476,6 +491,8 @@ export type BusinessFilters = {
   q: string | null;
   web: WebPresence | null;
   socials: CheckState | null;
+  /** The same vocabulary as `socials`, since 008 — both are `checkState`. */
+  contacts: CheckState | null;
   /** A `batch_id` or a `run_id`. */
   sweep: string | null;
   city: string | null;
@@ -485,6 +502,7 @@ export const NO_BUSINESS_FILTERS: BusinessFilters = {
   q: null,
   web: null,
   socials: null,
+  contacts: null,
   sweep: null,
   city: null,
 };
@@ -509,7 +527,7 @@ function member<T extends string>(value: ParamValue, allowed: readonly T[]): T |
 }
 
 /**
- * A URL, narrowed to the five questions this list can answer.
+ * A URL, narrowed to the six questions this list can answer.
  *
  * Anything unrecognised becomes null rather than an error: `?web=purple` names an axis that
  * exists and a value that does not, and the honest response is to filter nothing and let the
@@ -531,6 +549,7 @@ export function parseBusinessFilters(
     q: one(params.q),
     web: member(params.web, WEB_PRESENCE_VALUES),
     socials: member(params.socials, CHECK_STATE_VALUES),
+    contacts: member(params.contacts, CHECK_STATE_VALUES),
     sweep: sweep !== null && isUuid(sweep) ? sweep : null,
     city: one(params.city),
   };
@@ -575,11 +594,14 @@ export type BusinessRow = {
   socials: CheckState;
   socialsCheckedAt: Date | null;
   /**
-   * Two states, not three, and the grant is why — `contacts` is invisible to this role, so
-   * whether the check found anyone is unanswerable from here. See `contactsCheck`.
+   * Already read (§5.4), and three states since 008 — the same reading socials gets, from a
+   * granted count rather than four granted columns. `contacts` itself is still invisible to this
+   * role; what the view hands over is an integer, never a name.
    */
-  contacts: ContactsCheck;
+  contacts: CheckState;
   contactsCheckedAt: Date | null;
+  /** How many people the enrichment found. The evidence behind `contacts`, and all of it. */
+  contactsFound: number;
   /** When the row was first written. The sightings list is the authority on when it was *seen*. */
   createdAt: Date;
   /** When the row was last written — a re-sighting, or an enrichment check. Not a sighting. */
@@ -608,6 +630,7 @@ type RawBusinessRow = {
   created_at: Date;
   updated_at: Date;
   sightings: number;
+  contacts_found: number;
   total_businesses: number;
 };
 
@@ -633,8 +656,9 @@ function toBusinessRow(raw: RawBusinessRow): BusinessRow {
       socialUrls.some((url) => url !== null),
     ),
     socialsCheckedAt: raw.socials_checked_at,
-    contacts: contactsCheck(raw.contacts_checked_at),
+    contacts: checkState(raw.contacts_checked_at, raw.contacts_found > 0),
     contactsCheckedAt: raw.contacts_checked_at,
+    contactsFound: raw.contacts_found,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
     sightings: raw.sightings,
@@ -655,6 +679,7 @@ export async function selectBusinesses(
     filters.q === null ? null : likeLiteral(filters.q),
     filters.web,
     filters.socials,
+    filters.contacts,
     filters.sweep,
     filters.city,
     limit,

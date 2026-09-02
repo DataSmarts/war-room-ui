@@ -44,11 +44,12 @@ import {
  *   6. businesses      the same, plus: every filter agrees with the reading it filters on
  *   7. write refusal   a write through this URL is refused, by the role
  *
- * **On check 6.** `webPresence` and `checkState` exist once in TypeScript and once more as SQL
- * predicates, because a list of 1416 rows has to be narrowed in the database rather than in the
- * page. That duplication cannot be designed away and it can drift silently — the cell says one
- * thing, the filter counts another, and nobody notices until they count by hand. So it is
- * checked instead, on live rows, for every value of both vocabularies.
+ * **On check 6.** `webPresence` and `checkState` exist once in TypeScript and three more times as
+ * SQL predicates — web, socials, and contacts since 008 — because a list of 1416 rows has to be
+ * narrowed in the database rather than in the page. That duplication cannot be designed away and
+ * it can drift silently: the cell says one thing, the filter counts another, and nobody notices
+ * until they count by hand. So it is checked instead, on live rows, for every value of both
+ * vocabularies.
  *
  * **On check 4 restating the predicates.** CLAUDE.md's rule is that no *view* re-derives run
  * state — six dashboards must not each hold an opinion about it at render time. A check is the
@@ -492,10 +493,12 @@ if (allBusinesses.total === 0) {
 } else {
   const first = allBusinesses.rows[0]!;
 
-  // §5.8 again, for this table's two counts. `sightings` is a subquery count and `total` is a
-  // window count; both are bigint before the cast, and both render as text if one is dropped.
+  // §5.8 again, for this table's three counts. `sightings` is a subquery count, `total` is a
+  // window count, and `contactsFound` comes out of a view that casts it; all three are bigint
+  // before the cast, and all three render as text if one is dropped.
   const notNumbers = ([
     ["sightings", first.sightings],
+    ["contactsFound", first.contactsFound],
     ["total", allBusinesses.total],
   ] as Array<[string, unknown]>).filter(([, v]) => typeof v !== "number");
 
@@ -508,9 +511,11 @@ if (allBusinesses.total === 0) {
   } else {
     const web = new Set(allBusinesses.rows.map((r) => r.web));
     const socials = new Set(allBusinesses.rows.map((r) => r.socials));
+    const contacts = new Set(allBusinesses.rows.map((r) => r.contacts));
     pass(
       `${allBusinesses.total} business(es) typed; web presence reads as ${[...web].join(", ")}; ` +
-        `socials read as ${[...socials].join(", ")}`,
+        `socials read as ${[...socials].join(", ")}; ` +
+        `contacts read as ${[...contacts].join(", ")}`,
     );
   }
 
@@ -555,9 +560,9 @@ if (allBusinesses.total === 0) {
   // --- the filters, against the readings they claim to implement ---
   //
   // This is the one place in the repo where the same decision is written twice: `webPresence`
-  // and `checkState` in TypeScript, and the predicates in `BUSINESSES_SQL`. A drift between them
-  // is invisible from either side — the cells look right, the filter looks right, and the counts
-  // are quietly wrong. So the two are compared on live rows, for every value of both
+  // and `checkState` in TypeScript, and the three predicates in `BUSINESSES_SQL`. A drift between
+  // them is invisible from either side — the cells look right, the filter looks right, and the
+  // counts are quietly wrong. So they are compared on live rows, for every value of both
   // vocabularies, and a disagreement refuses the push in the repo that caused it.
   if (allBusinesses.rows.length < allBusinesses.total) {
     note(
@@ -583,11 +588,22 @@ if (allBusinesses.total === 0) {
       }
     }
 
+    // Contacts reads the same vocabulary from a different pair of columns — the granted count and
+    // the timestamp — so its predicate is a second transcription of `checkState` and needs its own
+    // agreement, not socials' by association.
+    for (const value of CHECK_STATE_VALUES) {
+      const derived = allBusinesses.rows.filter((r) => r.contacts === value).length;
+      const filtered = await selectBusinesses(sql, { ...NO_BUSINESS_FILTERS, contacts: value }, 1);
+      if (filtered.total !== derived) {
+        mismatches.push(`contacts=${value}: SQL ${filtered.total} vs checkState ${derived}`);
+      }
+    }
+
     if (mismatches.length > 0) {
       fail(`a filter disagrees with the reading it filters on — ${mismatches.join("; ")}`);
     } else {
       pass(
-        `every web presence and socials filter agrees with derive.ts across all ` +
+        `every web presence, socials and contacts filter agrees with derive.ts across all ` +
           `${allBusinesses.total} rows`,
       );
     }

@@ -167,6 +167,31 @@ export const READ_MODEL = {
     contacts_checked_at: "timestamptz",
   },
 
+  /**
+   * 008. How many contacts a business has — and not one thing about who they are.
+   *
+   * `contacts` stays in `UNGRANTED` below, and that pairing is the entire safety argument: the
+   * view runs with its owner's rights, so SELECT here grants nothing on the table underneath it.
+   * The check asserts both halves on every push — this relation visible, that one not.
+   *
+   * What the count buys is the third state. `contacts_checked_at` says an enrichment ran; this
+   * says whether it found anyone, and between them `checkState` answers for contacts exactly what
+   * it already answers for socials. 296 live businesses were looked at and had nobody, which is a
+   * fact about them and not a gap in our data — before 008 this half could not tell them apart
+   * from the 590 that do.
+   *
+   * There is no row for a business with no contacts; `BUSINESS_COLUMNS` coalesces to 0.
+   */
+  business_contact_counts: {
+    business_id: "uuid!",
+    // Cast to int4 in the view on purpose. Left as the count's own bigint it would arrive as a
+    // string (§5.8) and `> 0` would be a compile error rather than a wrong reading.
+    contacts: "int4!",
+    // Counted through `graded_contacts`, where 004 keeps the three-source provenance rule. Granted
+    // and modelled so a screen that wants it needs no migration; nothing selects it today.
+    graded: "int4!",
+  },
+
   /** 001. Granted so the shell can say which migration this UI was built against. */
   schema_migrations: {
     version: "text!",
@@ -229,6 +254,7 @@ export const VIEWS: ReadonlySet<Relation> = new Set([
   "run_accounting",
   "run_state",
   "contacted_businesses",
+  "business_contact_counts",
 ]);
 
 /**
@@ -252,6 +278,11 @@ export const WITHHELD: ReadonlyArray<{ relation: string; column: string }> = [
  * `instantly_status` columns belong to the push and the mirror, and `composed_sequences.cleared_by`
  * authorises a real send. None of it is ungranted-for-UPDATE — it is ungranted entirely, because
  * `contacted_businesses` already answers the only question a dashboard has about it.
+ *
+ * `contacts` is the one this list is now asked about most, so state it here: 008 granted a *count*
+ * over it and the table itself stayed exactly this dark. Two views answer questions about
+ * `contacts` without a row of it ever being readable, and the day either of them is quietly
+ * replaced by a grant on the table, this line is the one that should have stopped it.
  *
  * Asserting the list from outside the migration that wrote it is the point: this is 006's blast
  * radius, checked by the half it was drawn around.

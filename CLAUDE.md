@@ -44,9 +44,9 @@ Linear document wins.
   *asked, and could not find out*. Same distinction as a view's loading vs a run's
   `running` — never spend one on the other.
 - **`EXPECTED_SCHEMA` in `src/lib/shell-status.ts` is what this UI was built against.**
-  Bump it in the change that adopts a migration; the top bar shows `warn` for as long as it
-  and the database's head migration disagree. That chip is the whole reason 006 granted
-  `schema_migrations`.
+  Bump it in the change that adopts a migration; the left rail's chip shows `warn` for as
+  long as it and the database's head migration disagree. That chip is the whole reason 006
+  granted `schema_migrations`.
 - No state mutation on GET. Validate URL schemes on anything operator-edited.
 - Secrets: as many as the UI needs, provider keys included — in env, never committed,
   never logged. The blast radius is the `ui` role's grant, not the number of keys.
@@ -129,8 +129,8 @@ lives in `badge.tsx` and on `/kitchen-sink`, not in each view.
   shared-platform presence (linktr.ee, a Facebook page), not "no website".
   `socials_checked_at` set with all four URLs null renders **"none confirmed"**, never
   "none" — "never looked" and "looked, found nobody" are different facts, and the schema
-  keeps them apart on purpose. **`contacts_checked_at` is the exception, and not by
-  choice**: see `contactsCheck` below.
+  keeps them apart on purpose. `contacts_checked_at` says the same, and since migration 008
+  it can be read the same way: see `checkState` (contacts) below.
 - **`error` and `aborted_reason` are scars, not statuses.** Neither is cleared by a
   later success, and both can carry a provider's raw response body. Keep them behind a
   disclosure — never in a list cell, never in metadata, never in a log.
@@ -193,7 +193,7 @@ same reason. **No view re-derives one and no view invents a word for one.**
 | -- | -- | -- |
 | `webPresence` | `site` · `off-platform` · `none` | the domain · the URL + `elsewhere` · `no site` |
 | `checkState` (socials) | `found` · `none-confirmed` · `never-looked` | the platforms · `none confirmed` · **hollow** |
-| `contactsCheck` | `checked` · `never-looked` | `checked <when>` · **hollow** |
+| `checkState` (contacts) | `found` · `none-confirmed` · `never-looked` | `2 contacts` · `none confirmed` · **hollow** |
 | `ratingReading` | `rated` · `thin` · `unrated` | `4.8 · 214 reviews` · dimmed + `thin` · **hollow** |
 
 - **None of these is a status, so none of them gets a colour.** Purple is identity,
@@ -201,12 +201,20 @@ same reason. **No view re-derives one and no view invents a word for one.**
   separates them is weight and glyph. The hollow ring appears exactly three times and
   **never on a fact**: `never looked` (socials), `never looked` (contacts), `never rated`.
   `no site` and `none confirmed` are plain text, because somebody looked.
-- **Contacts is two states, not three, and the grant is why.** `contacts` is ungranted to
-  the `ui` role (§6) — it holds decision-makers' names and addresses, and the deploy is a
-  public URL until the login lands. So the column answers *were they looked for*, never
-  *were any found*. **Do not "unify" it by calling `checkState(checkedAt, false)`**: that
-  would render 712 live businesses as "none confirmed" from code that cannot see whether
-  anyone was found. A test asserts the two functions disagree on a checked business.
+- **Contacts is three states because 008 granted a count, never a row.** It used to be two,
+  and the reason it could not be three is worth keeping: `contacts` is ungranted to the `ui`
+  role (§6) — it holds decision-makers' names and addresses — so "none confirmed" was a
+  positive claim this half had no evidence for. The fix was the data, not a convention.
+  `business_contact_counts` is a view over `contacts` granted to `ui`; it hands over
+  `business_id`, `contacts` and `graded` as integers and nothing else, and it works because
+  no view in this schema is `security_invoker`. **`contacts` itself is still ungranted and
+  stays that way** — `schema:check` asserts the count is visible and the table is not, on
+  every push. Do not widen it to a name, an email or a list.
+- **Both halves of the contacts reading are load-bearing.** `checkState(checkedAt, count > 0)`,
+  never one column alone. A contacts run that met nothing but provider errors does not stamp
+  `contacts_checked_at`, so zero-with-a-timestamp is *looked, found nobody* (296 live
+  businesses) and zero-without-one is *never got an answer* (530). A test asserts each column
+  changes an answer the other cannot.
 - **A rating is never drawn as a shape.** No stars, no bar, no meter, for either kind — a
   filled shape is a confidence claim. `RATING_CONFIDENCE_MIN` is 10, and it is *ours*, not
   Google's: probe the boundary in tests, never assert the number the way
@@ -218,10 +226,12 @@ same reason. **No view re-derives one and no view invents a word for one.**
   `http:`/`https:`, because a browser strips tabs out of a scheme and any denylist loses.
   Five columns are provider-supplied (`website_uri` + four socials). A rejected URL is still
   *shown*; it is just not clickable.
-- **The `web` and `socials` filter predicates in `BUSINESSES_SQL` are those two functions
-  transcribed into SQL** — the one duplicated decision in the repo, because 1416 rows are
-  narrowed in the database. It cannot be designed away, so `schema:check` proves the two
-  agree on live rows for every value of both vocabularies, and a drift refuses the push.
+- **The `web`, `socials` and `contacts` filter predicates in `BUSINESSES_SQL` are those two
+  functions transcribed into SQL** — the one duplicated decision in the repo, because 1416
+  rows are narrowed in the database. It cannot be designed away, so `schema:check` proves all
+  three agree on live rows for every value of both vocabularies, and a drift refuses the push.
+  Contacts is its own transcription, not socials' by association: same vocabulary, different
+  pair of columns.
 - **Zero sightings is a real answer, not a broken row.** 293 live businesses have no
   `run_businesses` link at all — they were written before the first run existed. §3.4's
   `sum(businesses_new) = count(businesses)` holds over the businesses *discovery* created,
