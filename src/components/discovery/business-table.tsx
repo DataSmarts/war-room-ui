@@ -133,7 +133,7 @@ export function BusinessTable({
           <TableHead title="three states: found, looked and found nobody, or never looked">
             Socials
           </TableHead>
-          <TableHead title="whether an enrichment has run. What it found is not readable by this role — the contacts table is ungranted">
+          <TableHead title="three states: how many were found, looked and found nobody, or never looked">
             Contacts
           </TableHead>
           <TableHead title="always with its review count — a 5.0 from four reviews is a sample, not a score">

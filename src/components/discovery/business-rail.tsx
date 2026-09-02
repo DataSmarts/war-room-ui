@@ -81,7 +81,10 @@ export function BusinessRailFacts({ row }: { row: BusinessRow }) {
         >
           <SocialsMark row={row} />
         </RailField>
-        <RailField label="contacts">
+        <RailField
+          label="contacts"
+          title="three states: found, looked and found nobody, or never looked"
+        >
           <ContactsMark row={row} />
         </RailField>
         <RailField
@@ -91,14 +94,6 @@ export function BusinessRailFacts({ row }: { row: BusinessRow }) {
           <RatingMark reading={row.rating} />
         </RailField>
       </dl>
-
-      {/* Said once, here, rather than in every one of two hundred cells. The column above can
-          only report whether anyone looked; this is why. */}
-      <p className="text-text-3">
-        {row.contactsCheckedAt
-          ? `An enrichment ran on ${absoluteTime(row.contactsCheckedAt)}. Whether it found anyone is not readable here — the contacts table holds decision-makers' names and addresses, and this role cannot see it.`
-          : "No enrichment has run for this business, so nothing is known about its contacts either way."}
-      </p>
 
       <dl className="space-y-1">
         <RailField

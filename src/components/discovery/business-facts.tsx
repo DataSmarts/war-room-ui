@@ -6,12 +6,11 @@ import {
   httpHref,
   WEB_PRESENCE_VALUES,
   type CheckState,
-  type ContactsCheck,
   type RatingReading,
   type WebPresence,
 } from "@/lib/discovery/derive";
 import type { BusinessRow } from "@/lib/discovery/sql";
-import { absoluteTime, relativeTime } from "@/lib/time";
+import { absoluteTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /**
@@ -207,42 +206,67 @@ export function SocialsMark({ row }: { row: BusinessRow }) {
 // --- contacts ----------------------------------------------------------------------------------
 
 /**
- * Two entries, not three — the column that had to give something up.
+ * Three entries since 008 — the column that got its middle state back.
  *
- * The question a "Contacts" column wants to answer is *does this business have any*, and this
- * role cannot answer it: `contacts` is ungranted (§6). So the column answers the question it
- * can — **were they looked for** — and says the date it happened. What the looking found is not
- * claimed anywhere on this page.
+ * The question a "Contacts" column wants to answer is *does this business have any*, and until
+ * migration 008 this role could not answer it: `contacts` is ungranted (§6), so the column said
+ * only whether anyone had looked. `business_contact_counts` hands over an integer per business —
+ * never a name, never an address — and that is enough for `checkState` to answer here exactly
+ * what it answers for socials.
+ *
+ * So the middle state is now a claim we can back: somebody looked, and there was nobody. 296 live
+ * businesses are in it, and they used to be indistinguishable from the 590 that have people.
  */
-export const CONTACTS: Record<ContactsCheck, { label: string; note: string }> = {
-  checked: {
-    label: "checked",
-    note: "an enrichment ran on this date. Whether it found anyone is not readable by this role",
+export const CONTACTS: Record<CheckState, { label: string; note: string }> = {
+  found: {
+    label: "found",
+    note: "the enrichment found people, and the count is how many — the names live in a table this role still cannot read",
+  },
+  "none-confirmed": {
+    label: "none confirmed",
+    note: "we looked and found nobody — a fact about the business, never a gap in our data, and never rendered as plain 'none'",
   },
   "never-looked": {
     label: "never looked",
-    note: "no enrichment has run. Nothing is known about this business's contacts either way",
+    note: "no enrichment has answered for this business. The hollow ring is the whole point: absent knowledge, not an absent person",
   },
 };
 
-export const CONTACTS_ORDER: readonly ContactsCheck[] = ["checked", "never-looked"];
+export const CONTACTS_ORDER: readonly CheckState[] = CHECK_STATE_VALUES;
 
 export function ContactsMark({ row }: { row: BusinessRow }) {
-  if (row.contacts === "never-looked") {
-    return <Hollow title={CONTACTS["never-looked"].note}>never looked</Hollow>;
+  switch (row.contacts) {
+    case "found":
+      // The count, not the word — the same choice SocialsMark makes in naming the platforms it
+      // found. A reading that shows its evidence is one nobody has to take on trust.
+      return (
+        <span
+          className="whitespace-nowrap text-text-2"
+          title={
+            row.contactsCheckedAt
+              ? `found on ${absoluteTime(row.contactsCheckedAt)}`
+              : undefined
+          }
+        >
+          {row.contactsFound} {row.contactsFound === 1 ? "contact" : "contacts"}
+        </span>
+      );
+    case "none-confirmed":
+      return (
+        <span
+          className="whitespace-nowrap text-text-2"
+          title={
+            row.contactsCheckedAt
+              ? `looked on ${absoluteTime(row.contactsCheckedAt)}, found nobody`
+              : undefined
+          }
+        >
+          none confirmed
+        </span>
+      );
+    case "never-looked":
+      return <Hollow title={CONTACTS["never-looked"].note}>never looked</Hollow>;
   }
-  return (
-    <span
-      className="whitespace-nowrap text-text-2"
-      title={
-        row.contactsCheckedAt
-          ? `${absoluteTime(row.contactsCheckedAt)} — whether it found anyone is not readable by this role`
-          : undefined
-      }
-    >
-      checked {row.contactsCheckedAt ? relativeTime(row.contactsCheckedAt) : ""}
-    </span>
-  );
 }
 
 // --- rating ------------------------------------------------------------------------------------

@@ -86,13 +86,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   checkState,
-  contactsCheck,
   ratingReading,
   redactSecrets,
   resultCount,
   webPresence,
   type CheckState,
-  type ContactsCheck,
   type RatingReading,
   type WebPresence,
 } from "@/lib/discovery/derive";
@@ -393,6 +391,7 @@ function makeBusiness(over: BusinessSeed): BusinessRow {
     linkedinUrl: null,
     socialsCheckedAt: null,
     contactsCheckedAt: null,
+    contactsFound: 0,
     createdAt: ago(6 * DAY),
     updatedAt: ago(2 * HOUR),
     sightings: 3,
@@ -408,7 +407,7 @@ function makeBusiness(over: BusinessSeed): BusinessRow {
         (url) => url !== null,
       ),
     ),
-    contacts: contactsCheck(row.contactsCheckedAt),
+    contacts: checkState(row.contactsCheckedAt, row.contactsFound > 0),
   };
 }
 
@@ -427,6 +426,7 @@ const BUSINESS_FIXTURES: BusinessRow[] = [
     linkedinUrl: "https://linkedin.com/company/mercerortho",
     socialsCheckedAt: ago(2 * DAY),
     contactsCheckedAt: ago(2 * DAY),
+    contactsFound: 3,
     sightings: 7,
   }),
   makeBusiness({
@@ -474,6 +474,9 @@ const BUSINESS_FIXTURES: BusinessRow[] = [
     linkedinUrl: "https://linkedin.com/company/midtownfamilydds",
     socialsCheckedAt: ago(HOUR),
     contactsCheckedAt: ago(HOUR),
+    // One, so the singular is on the page — and it is the overwhelmingly common case: of the 590
+    // live businesses with contacts, 585 hold exactly one, two hold two, three hold five.
+    contactsFound: 1,
     rating: ratingReading(4.9, 1204),
     sightings: 12,
   }),
@@ -503,8 +506,11 @@ const SOCIALS_SAMPLES: Record<CheckState, BusinessRow> = {
   "never-looked": BUSINESS_FIXTURES[2]!,
 };
 
-const CONTACTS_SAMPLES: Record<ContactsCheck, BusinessRow> = {
-  checked: BUSINESS_FIXTURES[0]!,
+const CONTACTS_SAMPLES: Record<CheckState, BusinessRow> = {
+  found: BUSINESS_FIXTURES[0]!,
+  // Checked nine days ago, nobody found. 296 live businesses are in this state and had no
+  // rendering of their own until 008 granted the count that separates them from the 590.
+  "none-confirmed": BUSINESS_FIXTURES[5]!,
   "never-looked": BUSINESS_FIXTURES[2]!,
 };
 
@@ -575,6 +581,7 @@ const NO_FILTERS = {
   q: null,
   web: null,
   socials: null,
+  contacts: null,
   sweep: null,
   city: null,
 };
@@ -1233,7 +1240,9 @@ export default function KitchenSink() {
             </div>
 
             <div className="space-y-1.5">
-              <p className="text-text-2">contacts — two states, and the grant is why</p>
+              <p className="text-text-2">
+                contacts — three states since 008, and a granted count is why
+              </p>
               {CONTACTS_ORDER.map((value) => (
                 <div key={value} className="flex items-baseline gap-3">
                   <div className="w-44 shrink-0">
@@ -1302,6 +1311,7 @@ export default function KitchenSink() {
               q: "law",
               web: "off-platform",
               socials: "none-confirmed",
+              contacts: "found",
               sweep: "3ad70e55-0000-4000-8000-000000000002",
               city: "Austin",
             }}
@@ -1377,9 +1387,9 @@ export default function KitchenSink() {
           </div>
 
           <p className="max-w-prose text-xs text-text-3">
-            The rail is the only place that says why the contacts column is two states and
-            not three — said once here rather than in two hundred cells. The sightings list
-            tags its <span className="text-text-2">first sighting</span>, which is exact
+            The rail carries the four readings with no paragraph underneath explaining what
+            one of them cannot say — 008 removed the reason there was one. The sightings
+            list tags its <span className="text-text-2">first sighting</span>, which is exact
             rather than approximate: the link row is a bigserial, so &ldquo;first ever
             seen&rdquo; is a sequence comparison with no timestamps to tie, and that run
             holds the business&rsquo;s <span className="font-mono">new</span> credit

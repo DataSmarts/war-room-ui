@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import {
+  CONTACTS,
+  CONTACTS_ORDER,
   SOCIALS,
   SOCIALS_ORDER,
   WEB_PRESENCE,
@@ -16,9 +18,9 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * The five ways to narrow the list, all of them in the URL.
+ * The six ways to narrow the list, all of them in the URL.
  *
- * **Links, not a form, for the three vocabularies** — and not to avoid JavaScript for its own
+ * **Links, not a form, for the four vocabularies** — and not to avoid JavaScript for its own
  * sake. A row of links shows every value of a three-state vocabulary at once, which is the thing
  * the vocabulary exists to teach: an operator who can see `own site · elsewhere · no site` side by
  * side has already learned that the middle one is not the last one. A `<select>` hides two of the
@@ -157,6 +159,9 @@ export function BusinessFilterBar({
         {filters.socials ? (
           <input type="hidden" name="socials" value={filters.socials} />
         ) : null}
+        {filters.contacts ? (
+          <input type="hidden" name="contacts" value={filters.contacts} />
+        ) : null}
         {filters.city ? <input type="hidden" name="city" value={filters.city} /> : null}
         {filters.sweep ? <input type="hidden" name="sweep" value={filters.sweep} /> : null}
         {selected ? <input type="hidden" name="business" value={selected} /> : null}
@@ -185,6 +190,19 @@ export function BusinessFilterBar({
         labels={(value) => SOCIALS[value]}
         current={filters.socials}
         param="socials"
+        basePath={basePath}
+        filters={filters}
+        selected={selected}
+      />
+
+      {/* Same vocabulary as socials, and it only has a row here because 008 granted the count
+          the third value is derived from. Before that there was no middle value to show. */}
+      <FilterRow
+        label="contacts"
+        values={CONTACTS_ORDER}
+        labels={(value) => CONTACTS[value]}
+        current={filters.contacts}
+        param="contacts"
         basePath={basePath}
         filters={filters}
         selected={selected}
