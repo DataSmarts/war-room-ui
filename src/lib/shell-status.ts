@@ -7,9 +7,10 @@ import { read } from "./db";
  * so a dashboard can say which migration the read-model was built against, and notice when
  * the schema has moved out from under it. The database can only report where it is — the
  * expectation has to be checked in beside the code that assumes it. Bump this in the change
- * that adopts a migration, never ahead of one.
+ * that adopts a migration, never ahead of one: between the two the chip in the left rail
+ * reads `warn` and names both versions, which is the job it exists to do.
  */
-export const EXPECTED_SCHEMA = "007_run_state";
+export const EXPECTED_SCHEMA = "008_business_contact_counts";
 
 /**
  * Three states, never two.

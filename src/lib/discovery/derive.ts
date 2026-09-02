@@ -192,6 +192,16 @@ export function webPresence(
  * `socials_checked_at` and `contacts_checked_at` are set even when the check comes back with
  * nothing, precisely so "never looked" stays distinguishable from "looked, found nobody". The
  * second renders **"none confirmed"**: it is a fact about the business, not a gap in our data.
+ *
+ * Both checks reach it the same way, and contacts only since migration 008. Socials proves
+ * `found` from four granted URL columns; contacts proves it from `business_contact_counts`, a
+ * granted **count** over a table this role still cannot read a row of. What that buys is the
+ * middle state — 296 live businesses were looked at and had nobody, and until the count existed
+ * this half could not tell them apart from the 590 that do.
+ *
+ * The timestamp is still half the answer, and the half a count cannot replace: a contacts run
+ * that met nothing but provider errors does not stamp at all, so a null `checked_at` means "never
+ * got an answer" and never "found nobody".
  */
 export const CHECK_STATE_VALUES = ["found", "none-confirmed", "never-looked"] as const;
 
@@ -202,27 +212,6 @@ export function checkState(checkedAt: Date | null, found: boolean): CheckState {
   // holding would be the one reading that contradicts itself.
   if (found) return "found";
   return checkedAt ? "none-confirmed" : "never-looked";
-}
-
-/**
- * The same question about contacts, and the answer the grant will not let us give.
- *
- * **Deliberately not `checkState`, and the next hand through here will want to "fix" that.**
- * `checkState` needs `found`, and `found` for contacts means "this business has at least one
- * row in `contacts`" — a table the `ui` role cannot see at all (§6). It is not withheld by
- * oversight: `contacts` holds decision-makers' names and addresses, and this deploy is a public
- * URL until the login lands.
- *
- * So passing `found: false` would be the cheap fix and the wrong one. It would render every
- * business anyone has ever looked at as **"none confirmed"** — a positive claim that nobody was
- * found, made by code that cannot see whether anyone was. Two states is what this role can back:
- * we looked, or we did not. What the looking turned up is absent knowledge, and the rendering
- * says so with no colour rather than inventing a word for it.
- */
-export type ContactsCheck = "never-looked" | "checked";
-
-export function contactsCheck(checkedAt: Date | null): ContactsCheck {
-  return checkedAt ? "checked" : "never-looked";
 }
 
 /**
