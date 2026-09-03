@@ -158,6 +158,13 @@
  * `rail-narrow:` on the aside that CARRIES `@container/rail` does nothing at all — and a custom
  * variant sorts after every built-in one, `hover:` included, so never pair the two on one
  * element expecting hover to win.
+ *
+ * Written as `@custom-variant` rather than as `--container-*` theme keys, and that is not
+ * taste. Tailwind's container variant resolves a theme size to `null` — no CSS, no error — the
+ * moment its value contains `var()`, and everything above in this file is `var()` indirection,
+ * so `--container-rail-narrow: var(--shell-rail-w)` would compile to silence. Two literal
+ * at-rules cannot fail that way, and they keep both thresholds beside the widths they are
+ * derived from.
  */
 @custom-variant shell-narrow {
   @container shell (width < 64rem) {
