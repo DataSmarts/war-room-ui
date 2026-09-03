@@ -30,6 +30,9 @@ import { NavLinks } from "./nav-links";
  *    the database, so they sit behind their own `<Suspense>` and degrade to `unknown` — the
  *    rule has not changed, only where the chips live.
  *
+ * The rail is capped at the viewport and stuck to its top — see `Sidebar` for why a rail that
+ * looked the right height was not one.
+ *
  * **And two widths, because "both fit" stopped being true below a laptop.** Under 64rem of app
  * frame the rail collapses to 4.5rem of icons; see `globals.css` for the two container queries
  * and why there are two. Everything the rail stops *showing* it keeps *saying*: a hidden label
@@ -151,13 +154,25 @@ export function SidebarStanding({ chips }: { chips: React.ReactNode }) {
 export function Sidebar() {
   return (
     <SidebarChrome
-      // The policy line, and it lives here rather than inside `SidebarChrome` for a reason:
-      // `/kitchen-sink` renders the chrome from INSIDE the shell, so the `shell` container is
-      // one of its ancestors too. Baked into the chrome, this class would collapse the sink's
-      // wide frames along with the real rail whenever the window was narrow — and `cn` could
-      // not undo it, because a variant utility and a bare one never conflict. Nothing in
-      // `SidebarChrome` knows how wide the app frame is; this is the only line that does.
-      className="shell-narrow:w-[var(--shell-rail-w-min)]"
+      // Shell policy, all of it, and it lives here rather than inside `SidebarChrome` for a
+      // reason: `/kitchen-sink` renders the chrome from INSIDE the shell, so the `shell`
+      // container is one of its ancestors too. Baked into the chrome, the width class would
+      // collapse the sink's wide frames along with the real rail whenever the window was
+      // narrow — and `cn` could not undo it, because a variant utility and a bare one never
+      // conflict. Nothing in `SidebarChrome` knows how wide the app frame is, or how tall.
+      //
+      // `sticky top-0 max-h-dvh` is the second half of that, and it fixes a rail that was
+      // never the height it looked. A stretch flex item is as tall as the tallest thing on its
+      // line, so beside a 1416-row table the rail measured 20242px — and the standing block,
+      // which sits at its foot, went with it. A schema chip warning about drift 20000px below
+      // the fold warns nobody. Capped at the viewport and stuck to its top, the rail keeps on
+      // a long page the shape it always had on a short one.
+      //
+      // The nav column's own `overflow-y-auto` is what absorbs a rail taller than the window,
+      // so the cap needs no scroll container of its own. Same three classes the detail rail
+      // uses on the other side of the table, for the same reason — and not in the chrome,
+      // because there is no scrollport inside a kitchen-sink frame for a rail to stick to.
+      className="sticky top-0 max-h-dvh shell-narrow:w-[var(--shell-rail-w-min)]"
       nav={<NavLinks />}
       standing={
         <SidebarStanding
