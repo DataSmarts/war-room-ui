@@ -52,7 +52,16 @@ export const PLANNED_ITEMS: readonly Omit<NavItem, "href">[] = [
   { label: "Copy", icon: PenLine, blurb: "Offers and the versions that went out" },
 ];
 
-const ROW = "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors";
+const ROW =
+  "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors " +
+  // The nav column scrolls, and `overflow-y: auto` forces the other axis to clip too — so an
+  // outline drawn outside a row is cut off. Drawn inside, it survives, and on a 47px rail it is
+  // the only thing a keyboard has to go on.
+  "focus-visible:outline-2 focus-visible:outline-brand focus-visible:-outline-offset-2 " +
+  // Collapsed: the icon alone, centred. The 2px left border is transparent on every row so the
+  // active one can colour it without moving anything by 2px.
+  "rail-narrow:justify-center rail-narrow:gap-0 rail-narrow:rounded-l-none rail-narrow:border-l-2 " +
+  "rail-narrow:border-transparent rail-narrow:px-0";
 
 /**
  * The rendering, with the pathname handed in.
@@ -71,25 +80,36 @@ export function NavLinksView({ pathname }: { pathname: string }) {
           <Link
             key={item.href}
             href={item.href}
-            title={item.blurb}
+            // The label leads, because collapsed this is the only place it can be read at all —
+            // a title of "What discovery was asked to find" that never says "Sweeps" is a
+            // tooltip for a rail that still has its labels. One string, both widths.
+            title={`${item.label} — ${item.blurb}`}
             aria-current={active ? "page" : undefined}
             className={cn(
               ROW,
               // Purple is identity. The active section is the only place it appears in this
-              // rail, and it never encodes a state.
+              // rail, and it never encodes a state. Collapsed, the tint alone has 47px to work
+              // with, so it is joined by a rule down the left — the same move `/sweeps` makes
+              // for a stopped sweep, in the other colour axis.
               active
-                ? "bg-brand/15 font-medium text-brand"
+                ? "bg-brand/15 font-medium text-brand rail-narrow:border-brand"
                 : "text-text-2 hover:bg-surface-2 hover:text-text-1",
             )}
           >
             <Icon className="size-4 shrink-0" aria-hidden />
-            <span className="truncate">{item.label}</span>
+            {/* Hidden, never deleted. `sr-only` keeps the link's accessible name "Sweeps" at
+                both widths; `hidden` would drop it to the title, which is a description. */}
+            <span className="truncate rail-narrow:sr-only">{item.label}</span>
           </Link>
         );
       })}
 
-      <p className="mt-5 mb-1 px-2.5 text-[10px] font-medium tracking-widest text-text-3 uppercase">
-        Planned
+      {/* Collapsed, the word goes and the rule stays: with its only child out of flow the
+          paragraph is 0px tall, so its own `border-t` is the separator. The grouping is the
+          fact worth keeping — the three planned modules stay drawn at both widths, because a
+          nav that hides them implies discovery is the whole system. */}
+      <p className="mt-5 mb-1 px-2.5 text-[10px] font-medium tracking-widest text-text-3 uppercase rail-narrow:mx-2 rail-narrow:mt-3 rail-narrow:mb-2 rail-narrow:border-t rail-narrow:border-hairline rail-narrow:px-0">
+        <span className="rail-narrow:sr-only">Planned</span>
       </p>
 
       {PLANNED_ITEMS.map((item) => {
@@ -97,14 +117,16 @@ export function NavLinksView({ pathname }: { pathname: string }) {
         return (
           <div
             key={item.label}
-            title={item.blurb}
+            title={`${item.label} — ${item.blurb}`}
             aria-disabled="true"
             className={cn(ROW, "cursor-default text-text-3")}
           >
             <Icon className="size-4 shrink-0 opacity-60" aria-hidden />
-            <span className="truncate">{item.label}</span>
-            {/* No colour: "not built" is absent knowledge about a screen, not a status. */}
-            <span className="ml-auto text-[10px] text-text-3">not built</span>
+            <span className="truncate rail-narrow:sr-only">{item.label}</span>
+            {/* No colour: "not built" is absent knowledge about a screen, not a status. It is
+                still said collapsed, just not shown — the dimming and the rule above are what
+                carry it visually. */}
+            <span className="ml-auto text-[10px] text-text-3 rail-narrow:sr-only">not built</span>
           </div>
         );
       })}

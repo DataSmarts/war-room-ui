@@ -78,6 +78,13 @@
    * dense table more room than the full-width bar plus a rail did — the sidebar costs the table
    * nothing a bar was not already taking, and it is the only place five modules fit. */
   --shell-rail-w: 13rem;
+
+  /* Collapsed, for a frame too narrow to afford 13rem. 4.5rem minus p-3 (1.5rem) minus the 1px
+   * right border leaves a 47px column: a 16px icon centred in its row, and just enough for the
+   * widest thing the standing block still has to say collapsed — a drift badge's 6px dot plus
+   * `007`. Below ~4rem the drift chip stops fitting, and a rail that cannot show drift is a rail
+   * that lies about what it knows. */
+  --shell-rail-w-min: 4.5rem;
 }
 
 @theme inline {
@@ -124,6 +131,44 @@
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+/*
+ * The shell's two container queries. Two levels, because they answer two different questions.
+ *
+ * `shell-narrow` is POLICY — how wide the app frame is, and therefore what the rail may cost the
+ * dense table. 64rem is Tailwind's own `@5xl`, the common 1024px laptop. Worth knowing what sits
+ * just above it: 13rem (the wide rail) + 56rem (`@4xl`, the width `main` needs before
+ * `DetailLayout` puts the detail rail *beside* the table instead of under it) = 69rem — so
+ * between 64rem and 69rem the wide rail is still what stacks the detail rail. Moving this one
+ * number to 69rem closes that band; 64rem is the deliberate choice to collapse no earlier than
+ * the laptop it is named after.
+ *
+ * `rail-narrow` is RENDERING — how wide the rail is, and therefore what fits inside it. 8rem
+ * sits between the only two content boxes the rail is ever given: 11.44rem when it is 13rem
+ * wide, 2.94rem when it is 4.5rem. (A size query reads the container's CONTENT box, and the
+ * aside's p-3 plus its border take 1.5rem of it.)
+ *
+ * The split is what puts BOTH widths on /kitchen-sink. `rail-narrow` is a property of the box,
+ * so a 4.5rem rail inside a 64rem page collapses by the same rule as the live shell does. One
+ * query, or a media query, would leave the narrow rail a drawing of itself.
+ *
+ * `rail` is the LEFT rail; the right-hand detail rail's container is unnamed and local to
+ * `detail-rail.tsx`. Two things that bite: an element can never query its own container, so
+ * `rail-narrow:` on the aside that CARRIES `@container/rail` does nothing at all — and a custom
+ * variant sorts after every built-in one, `hover:` included, so never pair the two on one
+ * element expecting hover to win.
+ */
+@custom-variant shell-narrow {
+  @container shell (width < 64rem) {
+    @slot;
+  }
+}
+
+@custom-variant rail-narrow {
+  @container rail (width < 8rem) {
+    @slot;
+  }
 }
 
 @layer base {
