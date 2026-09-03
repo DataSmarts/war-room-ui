@@ -71,7 +71,7 @@ import { NavLinksView } from "@/components/shell/nav-links";
 import { PageHeader } from "@/components/shell/page-header";
 import {
   SidebarChrome,
-  SidebarFooter,
+  SidebarStanding,
 } from "@/components/shell/sidebar";
 import {
   RUN_STATES,
@@ -643,10 +643,86 @@ function Frame({
   );
 }
 
+/**
+ * One rail fixture, drawn at both of its widths, side by side.
+ *
+ * The narrow one has its width PINNED — which is the whole reason the collapse is two container
+ * queries and not one. This page is 64rem wide and can never satisfy a "wider than 64rem" query,
+ * so if the narrow rendering were a property of the PAGE, one of these two could never be honest
+ * and would have to be a drawing. It is a property of the rail instead: make a rail narrow and
+ * it collapses, by the same rule that fires in the live shell.
+ *
+ * Both are the real component with the same fixture, so the pair is a comparison rather than two
+ * screenshots that can drift.
+ */
+function RailFrame({
+  label,
+  pathname,
+  chips,
+}: {
+  label: string;
+  pathname: string;
+  chips: React.ReactNode;
+}) {
+  // 30rem, because the wide rail's natural height is 448px and the label above it takes another
+  // 26 — a frame shorter than its contents spills them onto the next row's label.
+  return (
+    <Frame label={label} className="h-[30rem]">
+      <div className="flex h-full">
+        <SidebarChrome
+          className="h-full"
+          nav={<NavLinksView pathname={pathname} />}
+          standing={<SidebarStanding chips={chips} />}
+        />
+        <SidebarChrome
+          className="h-full w-[var(--shell-rail-w-min)]"
+          nav={<NavLinksView pathname={pathname} />}
+          standing={<SidebarStanding chips={chips} />}
+        />
+      </div>
+    </Frame>
+  );
+}
+
 export default function KitchenSink() {
   // The chips read a live database in the bar above. Here they are fed fixed inputs, so
   // every rendering is on the page at once rather than whichever one today happens to be.
   const recently = new Date(Date.now() - 2 * HOUR);
+
+  // The rail's four fixtures, rendered twice — once at each width. Defined once so the two
+  // rows cannot drift into demonstrating different states at different widths.
+  const railDemos = [
+    {
+      label: "a module is active — purple appears exactly once",
+      pathname: "/sweeps",
+      chips: (
+        <ChipsView
+          freshness={{ kind: "as-of", at: recently }}
+          schema={{ kind: "match", version: EXPECTED_SCHEMA, appliedAt: recently }}
+        />
+      ),
+    },
+    {
+      label: "no active module — this page. `/` redirects to /sweeps.",
+      pathname: "/kitchen-sink",
+      chips: (
+        <ChipsView
+          freshness={{ kind: "as-of", at: recently }}
+          schema={{ kind: "match", version: EXPECTED_SCHEMA, appliedAt: recently }}
+        />
+      ),
+    },
+    {
+      label: "the standing block before it answers",
+      pathname: "/businesses",
+      chips: <ChipsSkeleton />,
+    },
+    {
+      label: "the database could not be reached",
+      pathname: "/sweeps",
+      chips: <ChipsView freshness={{ kind: "unknown" }} schema={{ kind: "unknown" }} />,
+    },
+  ];
 
   return (
     <>
@@ -800,86 +876,47 @@ export default function KitchenSink() {
           </p>
         </Section>
 
-        <Section title="Shell — the left rail">
+        <Section title="Shell — the left rail, at both widths">
+          <p className="text-xs text-text-3">
+            each frame is the same rail twice — 13rem, then the 4.5rem it collapses to below
+            64rem of app frame
+          </p>
           <div className="flex flex-wrap gap-4">
-            <Frame label="a module is active — purple appears exactly once" className="h-[26rem]">
-              <SidebarChrome
-                className="h-full"
-                nav={<NavLinksView pathname="/sweeps" />}
-                standing={
-                  <>
-                    <div className="flex flex-col items-start gap-1.5 px-1.5">
-                      <ChipsView
-                        freshness={{ kind: "as-of", at: recently }}
-                        schema={{ kind: "match", version: EXPECTED_SCHEMA, appliedAt: recently }}
-                      />
-                    </div>
-                    <SidebarFooter />
-                  </>
-                }
-              />
-            </Frame>
-
-            <Frame label="no active module — this page. `/` redirects to /sweeps." className="h-[26rem]">
-              <SidebarChrome
-                className="h-full"
-                nav={<NavLinksView pathname="/kitchen-sink" />}
-                standing={
-                  <>
-                    <div className="flex flex-col items-start gap-1.5 px-1.5">
-                      <ChipsView
-                        freshness={{ kind: "as-of", at: recently }}
-                        schema={{ kind: "match", version: EXPECTED_SCHEMA, appliedAt: recently }}
-                      />
-                    </div>
-                    <SidebarFooter />
-                  </>
-                }
-              />
-            </Frame>
-
-            <Frame label="the standing block before it answers" className="h-[26rem]">
-              <SidebarChrome
-                className="h-full"
-                nav={<NavLinksView pathname="/businesses" />}
-                standing={
-                  <>
-                    <div className="flex flex-col items-start gap-1.5 px-1.5">
-                      <ChipsSkeleton />
-                    </div>
-                    <SidebarFooter />
-                  </>
-                }
-              />
-            </Frame>
-
-            <Frame label="the database could not be reached" className="h-[26rem]">
-              <SidebarChrome
-                className="h-full"
-                nav={<NavLinksView pathname="/sweeps" />}
-                standing={
-                  <>
-                    <div className="flex flex-col items-start gap-1.5 px-1.5">
-                      <ChipsView
-                        freshness={{ kind: "unknown" }}
-                        schema={{ kind: "unknown" }}
-                      />
-                    </div>
-                    <SidebarFooter />
-                  </>
-                }
-              />
-            </Frame>
+            {railDemos.map((demo) => (
+              <RailFrame key={demo.label} {...demo} />
+            ))}
           </div>
+
           <p className="max-w-prose text-xs text-text-3">
             A left rail rather than a top bar, because this app is a set of views over one
             system and only a rail can say so on every screen — five modules and a standing
-            block do not fit across the top without becoming a second navigation problem. It
-            costs the dense table nothing a full-width bar was not already taking, and the
-            right-hand detail rail is unaffected.{" "}
+            block do not fit across the top without becoming a second navigation problem.{" "}
             <span className="text-text-2">Planned modules are drawn as planned</span>: &ldquo;not
             built&rdquo; is a different fact from &ldquo;empty&rdquo;, so they are named, dimmed,
-            and not links — never a nav that implies discovery is the whole system.
+            and not links — never a nav that implies discovery is the whole system. They stay
+            drawn collapsed, with the heading traded for the hairline rule above them.
+          </p>
+          <p className="max-w-prose text-xs text-text-3">
+            <span className="text-text-2">Two container queries, asking two questions.</span>{" "}
+            One is policy — below 64rem of app frame the rail costs the dense table 4.5rem
+            instead of 13rem. The other is rendering — a rail narrower than 8rem shows icons.
+            Only the second reaches these components, which is why both halves of every frame
+            above are the real rail and neither is a picture of one: this page is 64rem wide and
+            could never satisfy the first. Nothing is deleted, either. Every label the rail stops
+            showing is still in the DOM, so a nav row is still named &ldquo;Sweeps&rdquo; at both
+            widths and its <code>title</code> stays a description rather than becoming the name
+            by default — which is also the whole of the hover behaviour, and the whole of what a
+            touch screen does not get.
+          </p>
+          <p className="max-w-prose text-xs text-text-3">
+            <span className="text-text-2">
+              The collapsed rail&rsquo;s one loss is the right one.
+            </span>{" "}
+            A read we could not make has room for the absence of a colour and nothing else, so it
+            keeps its hollow ring, its place in the order and its title, and never abbreviates
+            into a word we cannot back. Drift keeps its amber dot and the version the database is
+            actually at — that pair is the widest thing the standing block still has to fit, and
+            it is what sets 4.5rem.
           </p>
         </Section>
 

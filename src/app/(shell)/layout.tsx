@@ -33,7 +33,13 @@ export default async function ShellLayout({
     // load-bearing: without it a dense table's intrinsic width wins the flex negotiation and
     // pushes the whole page into a horizontal scroll instead of scrolling inside its own
     // container.
-    <div className="flex flex-1">
+    //
+    // `@container/shell` names this box as the one the rail's WIDTH is a function of — a
+    // container query rather than a media query, so `/kitchen-sink` can reproduce the frame
+    // instead of drawing a picture of it. It brings `contain: layout style inline-size` with
+    // it, which makes this div the containing block for any `position: fixed` descendant: a
+    // modal or toast added under this layout must portal to `document.body`.
+    <div className="@container/shell flex flex-1">
       <Sidebar />
       <main className="min-w-0 flex-1">{children}</main>
     </div>
