@@ -909,6 +909,14 @@ export default function KitchenSink() {
             touch screen does not get.
           </p>
           <p className="max-w-prose text-xs text-text-3">
+            <span className="text-text-2">What is not in these frames is the stickiness.</span>{" "}
+            The live rail is capped at the viewport and stuck to its top, because a stretch flex
+            item is otherwise as tall as the table beside it — 20242px on /businesses — and the
+            standing block sits at its foot. That is a fact about the app frame rather than
+            about the chrome: there is no scrollport inside a frame for a rail to stick to, so a
+            demo here would be a second set of classes pretending to be these ones.
+          </p>
+          <p className="max-w-prose text-xs text-text-3">
             <span className="text-text-2">
               The collapsed rail&rsquo;s one loss is the right one.
             </span>{" "}
