@@ -253,6 +253,25 @@ same reason. **No view re-derives one and no view invents a word for one.**
 - **Pending states are first-class**: a pipeline app is mostly empty / loading /
   partial / failed. Every view ships all of them. Low-data honesty — a 3-point line
   never draws a confident trend.
+- **A width is a property of the box, never of the viewport.** Responsive behaviour here is a
+  container query — that is what lets `/kitchen-sink` render a narrow rail *inside a small
+  frame* instead of a drawing of one. The shell uses two, answering different questions:
+  `shell-narrow` is **policy** (how wide the app frame is, and therefore what the rail may cost
+  the table), `rail-narrow` is **rendering** (how wide the rail is, and therefore what fits).
+  Only the second may appear in `sidebar.tsx` / `nav-links.tsx` / `chips.tsx`; the single
+  `shell-narrow:` class lives in `Sidebar`, because the sink renders `SidebarChrome` from
+  *inside* the shell and has to be able to pin a width and be believed. Both thresholds and
+  their arithmetic are in `globals.css`. Two consequences: an element can never query its own
+  container — `rail-narrow:` on the `<aside>` that *carries* `@container/rail` silently does
+  nothing, which is why the rail's padding is the same at both widths — and the shell wrapper is
+  now the containing block for `position: fixed`, so a future modal must portal to
+  `document.body`.
+- **Collapsing hides; it never deletes.** Every label the rail stops showing stays in the DOM as
+  `sr-only`, so a nav row is still named "Sweeps" at both widths and `title` stays a description
+  rather than becoming the name by default. `hidden` is only for a *second rendering of the same
+  fact* — both copies `aria-hidden`, the name pinned once with `aria-label`. Collapsed, the one
+  thing that loses its words and keeps only its shape is the hollow ring: absent knowledge has
+  room for the absence of a colour and never for a word we cannot back.
 - Every new primitive and every state lands on `/kitchen-sink` in the same change.
 
 ## Conventions
