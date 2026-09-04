@@ -237,6 +237,40 @@ same reason. **No view re-derives one and no view invents a word for one.**
   `sum(businesses_new) = count(businesses)` holds over the businesses *discovery* created,
   not over the table.
 
+## What a sweep spent — a number, and the absence of one
+
+Migration 010 ended §5.11: `run_costs` holds one row per provider request, written by the tool
+that made it with the rate **copied onto the row**, and `run_spend` sums it. The public half reads
+the view only — `run_costs` is in `UNGRANTED`, and for a different reason from everything else on
+that list: nothing sensitive, just no screen asking for a request timeline yet.
+
+| reading | when | renders as |
+| -- | -- | -- |
+| `recorded` | the ledger holds rows for this sweep | `$1.26 · 36 requests` |
+| `unrecorded` | no ledger rows | **hollow ring** — no colour |
+
+- **Zero rows is absent knowledge, never zero spent.** Every run swept before 010 has no rows and
+  never will; nothing was backfilled and nothing could be. The invariant that makes this readable:
+  a run is created only in order to make a request, and *every attempt writes a row* — failures
+  included. A run that genuinely spent nothing is not a shape this ledger produces. Ask
+  `spendReading`, never `costUsd === "0"`.
+- **Money is a fact, not a status, so it takes no colour.** Purple is identity, ok/warn/fail is
+  severity, and "this sweep cost $1.26" is neither. The pairing lives in `spend-facts.tsx` — the
+  third file of its kind after `status-pill.tsx` and `business-facts.tsx`, for the same reason.
+- **`attempts` and `requests` are different questions.** A request that failed is on the ledger and
+  out of the money: Google charges for some failures and this half cannot tell which, so `billed`
+  is a floor. A cell showing `14 requests` over 15 attempts says `1 unbilled` rather than hiding it.
+- **The figure is list price and the view says so.** The monthly free tier is account-wide and
+  invisible to this database, so a sweep reading $2.10 may have been billed nothing. Never render
+  it as an invoice.
+- **Never sort by cost.** Half the rows have no ledger, and ranking would file them as *cheapest* —
+  the same error as rendering `stalled` in a colour. `/costs` is ordered chronologically for that
+  reason, and the reason is in the file.
+- **`numeric` arrives as a string**, like `int8` and for a sharper reason: money through a float is
+  a rounding bug that reads as a number. `cost_usd` stays a string end to end; `formatUsd` places
+  the digits and `sumUsd` adds as integers. `schema:check` asserts both directions — counts are
+  numbers, money is not.
+
 ## Design language (enforced by `src/app/globals.css` — read it)
 
 - Dark-first, dark-only for now. Near-black base, elevated surfaces one notch

@@ -16,6 +16,10 @@ import {
   RUN_STATE_VALUES,
   runStateOf,
   SCAR_DISPLAY_MAX,
+  formatUsd,
+  SPEND_READING_VALUES,
+  spendReading,
+  sumUsd,
   SWEEP_STANDING_VALUES,
   sweepStanding,
   WEB_PRESENCE_VALUES,
@@ -590,4 +594,47 @@ test("isUuid turns a stale link into a not-found instead of an unknown", () => {
   for (const { input, expected, why } of UUID_CASES) {
     assert.equal(isUuid(input), expected, `${JSON.stringify(input)} — ${why}`);
   }
+});
+
+
+test("an empty ledger reads as unrecorded, never as nothing spent", () => {
+  // The whole honesty story of the costs view. The 43 runs that predate 010 have no ledger
+  // rows and never will, and a run exists only in order to make a request — every attempt
+  // writes a row, failures included. So zero rows means the ledger was not running, which is
+  // absent knowledge, not a measurement of zero.
+  assert.equal(spendReading(0), "unrecorded");
+  assert.equal(spendReading(1), "recorded");
+  assert.equal(spendReading(3), "recorded");
+});
+
+test("every spend reading has a case above", () => {
+  for (const value of SPEND_READING_VALUES) {
+    assert.ok(value === "recorded" || value === "unrecorded");
+  }
+});
+
+
+test("a geocode never rounds up into a cent it did not cost", () => {
+  // Two decimals is the wrong default here: one geocode is $0.005, and rendering that as
+  // $0.01 doubles it. Cents where cents are enough, more digits only where the number needs
+  // them — and the string is never parsed into a float on the way, because the column is
+  // numeric for exactly that reason.
+  assert.equal(formatUsd("0.005"), "$0.005");
+  assert.equal(formatUsd("0.0350"), "$0.035");
+  assert.equal(formatUsd("1.65"), "$1.65");
+  assert.equal(formatUsd("2"), "$2.00");
+  assert.equal(formatUsd("0"), "$0.00");
+});
+
+
+test("money is summed in exact units, never through a float", () => {
+  // The arithmetic this app cannot avoid, and the one place a float would put a wrong number on
+  // a screen that reads as an invoice: 0.005 + 0.035 is 0.04 in decimal and 0.039999999999999994
+  // in binary. The column is numeric so the digits arrive exact; they have to stay that way.
+  assert.equal(sumUsd(["0.005", "0.035"]), "0.04");
+  assert.equal(sumUsd(["1.65", "0.005"]), "1.655");
+  assert.equal(sumUsd([]), "0");
+  assert.equal(sumUsd(["0.1", "0.2"]), "0.3");
+  // Ten geocodes are a round five cents, not 0.049999999999999996.
+  assert.equal(sumUsd(Array(10).fill("0.005")), "0.05");
 });

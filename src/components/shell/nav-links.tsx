@@ -36,6 +36,7 @@ export interface NavItem {
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/sweeps", label: "Sweeps", icon: Radar, blurb: "What discovery was asked to find" },
   { href: "/businesses", label: "Businesses", icon: Building2, blurb: "What came back, and what is known about it" },
+  { href: "/costs", label: "Costs", icon: Coins, blurb: "What each sweep spent, at the rate it was charged" },
 ];
 
 /**
@@ -48,7 +49,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
  */
 export const PLANNED_ITEMS: readonly Omit<NavItem, "href">[] = [
   { label: "Outreach", icon: Send, blurb: "Campaigns, sequences, and what Instantly did with them" },
-  { label: "Costs", icon: Coins, blurb: "What a sweep spent — needs a schema change first (§5.11)" },
   { label: "Copy", icon: PenLine, blurb: "Offers and the versions that went out" },
 ];
 

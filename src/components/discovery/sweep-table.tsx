@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils";
  */
 
 /** Enough of a uuid to recognise a sweep by, and to match against a log line. */
-function shortId(id: string): string {
+export function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
@@ -53,7 +53,7 @@ function shortId(id: string): string {
  * **unrecorded**, never blank — a cell with nothing in it reads as a rendering bug, and this is
  * a fact about the runs.
  */
-function areaLabel(cities: string[], niches: string[]): string | null {
+export function areaLabel(cities: string[], niches: string[]): string | null {
   const parts = [cities.join(", "), niches.join(", ")].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }

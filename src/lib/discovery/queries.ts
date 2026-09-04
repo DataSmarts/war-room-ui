@@ -11,6 +11,7 @@ import {
   selectRun,
   selectRunScars,
   selectSightings,
+  selectSweepSpend,
   selectSweepRuns,
   selectSweeps,
   type BusinessFilters,
@@ -19,6 +20,7 @@ import {
   type RunRow,
   type RunScars,
   type SightingRow,
+  type SpendRow,
   type SweepRow,
 } from "./sql";
 
@@ -41,6 +43,7 @@ export type {
   RunRow,
   RunScars,
   SightingRow,
+  SpendRow,
   SweepRow,
 };
 
@@ -69,6 +72,20 @@ export const listSweepRuns = cache(
     return read("discovery/sweep-runs", (sql) =>
       selectSweepRuns(sql, batchId, limit),
     );
+  },
+);
+
+/**
+ * One sweep's spend, split by what was bought.
+ *
+ * An empty array is a real answer and the common one today: every run swept before 010 has no
+ * ledger rows, and nothing was backfilled. The rail reads that as `unrecorded` — absent knowledge
+ * — and never as a sweep that cost nothing.
+ */
+export const getSweepSpend = cache(
+  async (id: string): Promise<Read<SpendRow[]>> => {
+    if (!isUuid(id)) return { ok: true, value: [] };
+    return read("discovery/sweep-spend", (sql) => selectSweepSpend(sql, id));
   },
 );
 

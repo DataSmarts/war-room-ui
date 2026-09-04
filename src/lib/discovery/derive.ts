@@ -271,6 +271,77 @@ export function ratingReading(
  */
 const HTTP_URL = /^https?:\/\//i;
 
+/**
+ * What a run's spend is *known* to be — which is not the same question as how much it was.
+ *
+ * Two states, and the second is the reason this function exists at all. The ledger (010) begins
+ * where it begins: the 43 runs swept before it have no rows and never will, because nothing is
+ * backfilled and nothing could be — the requests they made left no trace a query could count.
+ *
+ * So zero rows is **absent knowledge, not a measurement of zero**, and the invariant that makes
+ * that readable is worth stating: a run row is created only in order to make a request, and every
+ * attempt writes a ledger row — the failures included, since a request that 429'd was still
+ * issued. A run that genuinely spent nothing is therefore not a shape this ledger produces. If
+ * one ever appears, it is a bug in the writer, not a free sweep.
+ *
+ * `unrecorded` renders as the hollow ring, beside `never looked` and `never rated`: the reading
+ * takes no colour, because absence of colour is how this app says absence of knowledge. Money is
+ * a **fact**, never a status — purple is identity and ok/warn/fail is severity, and "this sweep
+ * cost $1.65" is neither.
+ */
+export const SPEND_READING_VALUES = ["recorded", "unrecorded"] as const;
+
+export type SpendReading = (typeof SPEND_READING_VALUES)[number];
+
+export function spendReading(attempts: number): SpendReading {
+  return attempts > 0 ? "recorded" : "unrecorded";
+}
+
+/**
+ * List price, formatted. Never parsed into a number on the way through.
+ *
+ * `cost_usd` arrives as a string because the column is `numeric` and the driver preserves
+ * precision that way — see schema.ts. Turning it into a float to format it would throw that away
+ * for no gain, so the digits are placed by hand.
+ *
+ * Cents are the floor, not the rule. A single geocode is $0.005 and a two-decimal rendering of it
+ * is $0.01 — twice what it cost — so significant digits past the second are kept and trailing
+ * zeros beyond it are not.
+ */
+export function formatUsd(cost: string): string {
+  const [whole, fraction = ""] = cost.split(".");
+  const significant = fraction.replace(/0+$/, "").length;
+  return `$${whole || "0"}.${(fraction + "00").slice(0, Math.max(2, significant))}`;
+}
+
+/**
+ * Add dollar amounts without ever making one a float.
+ *
+ * The one piece of arithmetic this app cannot avoid, and the one place binary floating point puts
+ * a visibly wrong number on a screen that reads as an invoice: `0.005 + 0.035` is `0.04` in
+ * decimal and `0.039999999999999994` in a double. The column is `numeric` so the digits arrive
+ * exact, and they stay exact by being added as integers.
+ *
+ * Five decimal places is the unit, which is two more than any rate in this system uses — a
+ * geocode is $0.005 — so nothing is lost on the way in, and trailing zeros are dropped on the way
+ * out so `formatUsd` still sees a number's own precision rather than a padded one.
+ */
+const USD_SCALE = 100_000;
+
+export function sumUsd(costs: readonly string[]): string {
+  const units = costs.reduce((sum, cost) => {
+    const [whole, fraction = ""] = cost.split(".");
+    return sum + Number(whole || "0") * USD_SCALE + Number((fraction + "00000").slice(0, 5));
+  }, 0);
+
+  const fraction = String(units % USD_SCALE)
+    .padStart(5, "0")
+    .replace(/0+$/, "");
+  return fraction
+    ? `${Math.trunc(units / USD_SCALE)}.${fraction}`
+    : String(Math.trunc(units / USD_SCALE));
+}
+
 export function httpHref(uri: string | null): string | null {
   if (!uri) return null;
   const trimmed = uri.trim();
