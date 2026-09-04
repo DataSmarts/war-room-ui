@@ -263,6 +263,14 @@ export const VIEWS: ReadonlySet<Relation> = new Set([
  * Every one is an unmodeled third-party payload holding PII we never chose to store in a column.
  * The check asserts they do not appear in `information_schema` at all — which is a statement
  * about the role, not about our habits.
+ *
+ * **009 withheld three more, and they belong here the day their relations are modelled.**
+ * `lead_research.raw` is a sixth payload; `outreach_queue.email` and `.name` are a *person*, and
+ * the reason the queue was granted 17 of its 19 columns rather than whole — a screen can read it
+ * without `contacts` becoming readable through it, which is `contacted_businesses`' mechanism
+ * pointed the other way. They are left out here only because a withheld column naming a relation
+ * this repo does not model asserts nothing while reading as though it did, and the test beside
+ * this file says so. Whoever models the queue adds all three in the same change.
  */
 export const WITHHELD: ReadonlyArray<{ relation: string; column: string }> = [
   { relation: "businesses", column: "places_raw" },
@@ -274,28 +282,30 @@ export const WITHHELD: ReadonlyArray<{ relation: string; column: string }> = [
 /**
  * Relations that exist in this database and must stay invisible to the `ui` role.
  *
- * The outreach spine. `exported_at` is the placement claim, the receipt pair and the three
- * `instantly_status` columns belong to the push and the mirror, and `composed_sequences.cleared_by`
- * authorises a real send. None of it is ungranted-for-UPDATE — it is ungranted entirely, because
- * `contacted_businesses` already answers the only question a dashboard has about it.
+ * Four, since 009 — and the six that left this list left it the way 006 said they would: "no
+ * screen reads them yet. Each is one line in a later migration on the day one does." `campaigns`,
+ * `composed_sequences`, `artifacts`, `lead_research`, `research_artifacts` and `outreach_queue`
+ * are readable now. **What did not move is the write.** `exported_at` is still the placement
+ * claim, the receipt pair and the three `instantly_status` columns still belong to the push and
+ * the mirror, and `composed_sequences.cleared_by` still authorises a real send — this half reads
+ * all of it and writes none of it, and there is no INSERT, UPDATE or DELETE anywhere in its grant.
  *
- * `contacts` is the one this list is now asked about most, so state it here: 008 granted a *count*
- * over it and the table itself stayed exactly this dark. Two views answer questions about
- * `contacts` without a row of it ever being readable, and the day either of them is quietly
- * replaced by a grant on the table, this line is the one that should have stopped it.
+ * `campaign_memberships` stayed dark on 006's own argument one table over: `outreach_queue`
+ * answers what a screen asks of it, and the table adds `contact_id` — a key into `contacts` —
+ * and `instantly_status_raw`, a provider blob of the kind `WITHHELD` above names four times.
  *
- * Asserting the list from outside the migration that wrote it is the point: this is 006's blast
+ * `contacts` is the one this list is asked about most, so state it here: 008 granted a *count*
+ * over it and the table stayed exactly this dark; 009 granted a *queue* over it and withheld the
+ * two columns that would have undone that. Three views now answer questions about `contacts`
+ * without a row of it ever being readable, and the day any of them is quietly replaced by a grant
+ * on the table, this line is the one that should have stopped it.
+ *
+ * Asserting the list from outside the migration that wrote it is the point: this is the blast
  * radius, checked by the half it was drawn around.
  */
 export const UNGRANTED: readonly string[] = [
-  "campaigns",
   "campaign_memberships",
-  "composed_sequences",
   "contacts",
   "graded_contacts",
-  "artifacts",
-  "lead_research",
-  "research_artifacts",
   "legacy_exports",
-  "outreach_queue",
 ];
