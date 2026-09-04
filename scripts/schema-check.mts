@@ -25,6 +25,7 @@ import {
   selectSightings,
   selectSweepRuns,
   selectSweeps,
+  selectSweepSpend,
 } from "../src/lib/discovery/sql.ts";
 
 /**
@@ -421,6 +422,42 @@ if (sweeps.rows.length === 0) {
     );
   } else {
     pass("every count is a number, not a bigint string");
+  }
+
+  // The mirror of the check above, asserting the *opposite* thing about a different column.
+  // Counts must arrive as numbers; money must not. `cost_usd` is `numeric` precisely so the
+  // driver hands back a string and precision survives, and the day somebody casts it to float8
+  // to be helpful, this is the line that notices — before a rounded figure reaches a screen an
+  // operator reads as an invoice.
+  const id = sweep.batchId ?? sweep.runId;
+  if (typeof sweep.spend.costUsd !== "string") {
+    fail(
+      `cost_usd came back as ${typeof sweep.spend.costUsd} — money must stay a string (010)`,
+    );
+  } else if (
+    typeof sweep.spend.attempts !== "number" ||
+    typeof sweep.spend.requests !== "number"
+  ) {
+    fail("spend counts came back as strings — a ::int cast is missing in run_spend");
+  } else if (id === null) {
+    fail("a sweep row carried neither a batch id nor a run id");
+  } else {
+    const split = await selectSweepSpend(sql, id);
+    const recorded = sweep.spend.attempts > 0;
+    // The reading this whole view exists to protect: no ledger rows is absent knowledge, and a
+    // sweep that reported money without them would mean the two had come apart.
+    if (!recorded && sweep.spend.costUsd !== "0") {
+      fail(
+        `a sweep with no ledger rows reported ${sweep.spend.costUsd} — absence rendered as money`,
+      );
+    } else if (recorded && split.length === 0) {
+      fail("a sweep with ledger rows has no per-sku split — the two statements disagree");
+    } else {
+      pass(
+        `spend reads as ${recorded ? "recorded" : "unrecorded"}; ` +
+          `${split.length} sku(s) on the newest sweep; money typed as a string, not a float`,
+      );
+    }
   }
 
   const runs = sweep.batchId

@@ -60,7 +60,8 @@ export type Page<T> = { rows: T[]; total: number };
  * A batch is a grouping, not a thing (§5.10). It has no size, no lifecycle and no progress, so
  * there is no denominator here and there is not meant to be one — `queries` is how many runs the
  * rows prove, never a total to divide by. `build_grid.py` mints the uuid in the operating half;
- * the planned area count, the bias radius and the cost live outside this database entirely.
+ * the planned area count and the bias radius still live outside this database. **Cost does not,
+ * since 010** — it is joined below, per run, from the ledger the sweep wrote as it spent.
  *
  * The `case` in the `group by` is what keeps one-offs apart. Grouping on `batch_id` alone would
  * collapse every unbatched run into a single null-keyed row, which would read as one sweep that
@@ -86,10 +87,21 @@ select r.batch_id                                                       as batch
        (count(*) filter (where rs.state = 'errored'))::int              as errored,
        (count(*) filter (where rs.state = 'running'))::int              as running,
        (count(*) filter (where rs.state = 'stalled'))::int              as stalled,
+       (coalesce(sum(sp.attempts), 0))::int                             as spend_attempts,
+       (coalesce(sum(sp.requests), 0))::int                             as spend_requests,
+       coalesce(sum(sp.cost_usd), 0)                                    as spend_cost_usd,
        (count(*) over ())::int                                          as total_sweeps
 from run_accounting ra
 join runs r       on r.id      = ra.run_id
 join run_state rs on rs.run_id = ra.run_id
+-- LEFT, and that is the whole reading: a sweep older than 010 has no ledger rows, and the zero
+-- this produces means "not recorded" rather than "spent nothing". spendReading is what keeps
+-- those apart; nothing here may render the 0 as money.
+left join (select run_id,
+                  (sum(attempts))::int as attempts,
+                  (sum(requests))::int as requests,
+                  sum(cost_usd)        as cost_usd
+           from run_spend group by run_id) sp on sp.run_id = ra.run_id
 group by r.batch_id, (case when r.batch_id is null then r.id end)
 order by max(rs.updated_at) desc, min(ra.created_at) desc
 limit $2
@@ -124,6 +136,17 @@ export type SweepRow = {
    * `errored` is a rendering decision, and it belongs where the rendering is.
    */
   states: Record<RunState, number>;
+  /**
+   * What the sweep spent, summed from the per-request ledger (010).
+   *
+   * `attempts` is what it tried and `requests` is what we believe Google charged for — a sweep
+   * that met a 429 differs on the two, and both are kept. `costUsd` stays a **string** all the way
+   * to the screen: the column is `numeric` precisely so money never becomes a float, and
+   * `formatUsd` places the digits.
+   *
+   * Zero attempts is `unrecorded`, not zero spent. Ask `spendReading`, never `costUsd === "0"`.
+   */
+  spend: { attempts: number; requests: number; costUsd: string };
 };
 
 type RawSweepRow = {
@@ -142,6 +165,9 @@ type RawSweepRow = {
   errored: number;
   running: number;
   stalled: number;
+  spend_attempts: number;
+  spend_requests: number;
+  spend_cost_usd: string;
   total_sweeps: number;
 };
 
@@ -166,6 +192,11 @@ function toSweepRow(raw: RawSweepRow): SweepRow {
       running: raw.running,
       stalled: raw.stalled,
     },
+    spend: {
+      attempts: raw.spend_attempts,
+      requests: raw.spend_requests,
+      costUsd: raw.spend_cost_usd,
+    },
   };
 }
 
@@ -179,6 +210,51 @@ export async function selectSweeps(
   ])) as RawSweepRow[];
 
   return { rows: raw.map(toSweepRow), total: raw[0]?.total_sweeps ?? 0 };
+}
+
+/**
+ * One sweep's spend, split by what was bought.
+ *
+ * The split is the point: §5.11 says `results_returned` cannot see geocoding at all, so a total
+ * that did not separate the two would answer the question the trap says is unanswerable while
+ * looking like it had. Takes a batch id or a one-off's run id, the same pair `/sweeps/<id>`
+ * already accepts.
+ */
+const SWEEP_SPEND_SQL = `
+select s.sku                  as sku,
+       (sum(s.attempts))::int as attempts,
+       (sum(s.requests))::int as requests,
+       sum(s.cost_usd)        as cost_usd
+from run_spend s
+join runs r on r.id = s.run_id
+where r.batch_id = $1 or r.id = $1
+group by s.sku
+order by s.sku
+`;
+
+export type SpendRow = {
+  /** `places:text_search` or `geocoding:geocode`. Rendered by a lookup, never by splitting it. */
+  sku: string;
+  attempts: number;
+  requests: number;
+  /** A string, deliberately — see `SweepRow["spend"]`. */
+  costUsd: string;
+};
+
+export async function selectSweepSpend(sql: Sql, id: string): Promise<SpendRow[]> {
+  const raw = (await sql.query(SWEEP_SPEND_SQL, [id])) as {
+    sku: string;
+    attempts: number;
+    requests: number;
+    cost_usd: string;
+  }[];
+
+  return raw.map((row) => ({
+    sku: row.sku,
+    attempts: row.attempts,
+    requests: row.requests,
+    costUsd: row.cost_usd,
+  }));
 }
 
 // --- runs ------------------------------------------------------------------------------------

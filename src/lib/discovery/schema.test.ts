@@ -27,6 +27,7 @@ const PG_TYPES = new Set([
   "int8",
   "float8",
   "timestamptz",
+  "numeric",
   "_text",
 ]);
 

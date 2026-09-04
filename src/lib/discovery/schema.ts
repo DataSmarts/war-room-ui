@@ -23,6 +23,7 @@ type PgType =
   | "text"
   | "int4"
   | "int8"
+  | "numeric"
   | "float8"
   | "timestamptz"
   | "_text";
@@ -39,8 +40,14 @@ type Columns = Readonly<Record<string, PgColumn>>;
  * `::int` cast in SQL becomes a type error rather than a sixty rendered as the characters six and
  * nought. `queries.ts` casts, then types the result `number`; the gap between the two files is
  * the cast, stated.
+ *
+ * **`numeric` maps to `string` too, and for a sharper version of the same reason.** The driver
+ * hands numeric back as a string to preserve precision, and money is the one quantity where
+ * silently adopting a float is a rounding bug that reads as a number. So a dollar amount stays a
+ * string the whole way and is formatted at the edge, never parsed into arithmetic on the way
+ * through. The cast that would make it a `number` is the one cast this file does not want.
  */
-type TsOf<T extends PgType> = T extends "uuid" | "text" | "int8"
+type TsOf<T extends PgType> = T extends "uuid" | "text" | "int8" | "numeric"
   ? string
   : T extends "int4" | "float8"
     ? number
@@ -57,7 +64,7 @@ type TsOfColumn<C extends PgColumn> = C extends `${infer T extends PgType}!`
     : never;
 
 /**
- * The eight relations migration 006 and 007 grant to the `ui` role, and nothing else.
+ * The ten relations 006, 007, 008 and 010 grant to the `ui` role, and nothing else.
  *
  * Nullability on a **base table** is enforced by the check against `information_schema`.
  * Nullability on a **view** cannot be: `information_schema` reports every view column as
@@ -121,6 +128,33 @@ export const READ_MODEL = {
     // One of `RUN_STATE_VALUES` — narrowed by `runStateOf`, never re-derived.
     state: "text!",
     updated_at: "timestamptz!",
+  },
+
+  /**
+   * 010. What one run spent, per provider operation — and the only fact here the tool had to
+   * observe rather than derive.
+   *
+   * Every other count in this model is a view over rows that already existed. A request count
+   * cannot be: the billable event leaves no row. A 429, an empty page, a page trimmed by the cap
+   * were each paid for and produced nothing to count, which is why `run_costs` is a table at all
+   * and why it stays in `UNGRANTED` below — the ledger is written per request and only its sums
+   * are exposed.
+   *
+   * `attempts` and `requests` are different questions and both are kept. A sweep that met a 429
+   * tried three times and is believed to have paid twice; a view reporting only the two would
+   * lose the one. `billed` is deliberately a floor — Google charges for some failures and the
+   * writing tool declines to claim it.
+   */
+  run_spend: {
+    run_id: "uuid!",
+    // `places:text_search` or `geocoding:geocode`. Appended, never reordered.
+    sku: "text!",
+    // Both cast to int4 in the view (§5.8), so a count arrives as a number and not as characters.
+    attempts: "int4!",
+    requests: "int4!",
+    // List price, in dollars, at the rate of the day each request was bought. A string here on
+    // purpose — see the `numeric` note above.
+    cost_usd: "numeric!",
   },
 
   /** 001. This run returned this business. Nothing is ever updated. */
@@ -253,6 +287,7 @@ export type Row<R extends Relation> = {
 export const VIEWS: ReadonlySet<Relation> = new Set([
   "run_accounting",
   "run_state",
+  "run_spend",
   "contacted_businesses",
   "business_contact_counts",
 ]);
@@ -308,4 +343,11 @@ export const UNGRANTED: readonly string[] = [
   "contacts",
   "graded_contacts",
   "legacy_exports",
+  // 010's per-request ledger, and the one entry here that is dark for a *different* reason.
+  // Nothing above it is withheld out of caution about volume or taste — each holds a person, a
+  // provider payload, or a key into one. A row saying a request was made at a price holds none of
+  // that. It is ungranted because no view asks for a request timeline yet, which is 006's own
+  // rule ("each is one line in a later migration on the day one does") and not a safety claim.
+  // Do not cite this line as precedent for the four above it.
+  "run_costs",
 ];

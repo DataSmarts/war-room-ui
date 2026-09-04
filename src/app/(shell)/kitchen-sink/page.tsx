@@ -43,6 +43,15 @@ import {
   RunTable,
 } from "@/components/discovery/run-table";
 import {
+  CostCount,
+  CostsEmpty,
+  CostsFailed,
+  CostsLoading,
+  CostTable,
+  CostTotal,
+} from "@/components/discovery/cost-table";
+import { SpendSplit } from "@/components/discovery/spend-facts";
+import {
   SweepCount,
   SweepsEmpty,
   SweepsFailed,
@@ -148,6 +157,7 @@ const SWEEP_FIXTURES: SweepRow[] = [
     sightingsKnown: 96,
     saturatedQueries: 9,
     states: runs({ completed: 12 }),
+    spend: { attempts: 36, requests: 36, costUsd: "1.26" },
   },
   {
     batchId: "3ad70e55-0000-4000-8000-000000000002",
@@ -161,6 +171,7 @@ const SWEEP_FIXTURES: SweepRow[] = [
     sightingsKnown: 74,
     saturatedQueries: 7,
     states: runs({ completed: 11, aborted: 1 }),
+    spend: { attempts: 12, requests: 12, costUsd: "0.42" },
   },
   {
     batchId: "c81b96d4-0000-4000-8000-000000000003",
@@ -174,6 +185,7 @@ const SWEEP_FIXTURES: SweepRow[] = [
     sightingsKnown: 74,
     saturatedQueries: 7,
     states: runs({ completed: 11, running: 1 }),
+    spend: { attempts: 12, requests: 12, costUsd: "0.42" },
   },
   {
     batchId: "5e0aa317-0000-4000-8000-000000000004",
@@ -187,6 +199,7 @@ const SWEEP_FIXTURES: SweepRow[] = [
     sightingsKnown: 38,
     saturatedQueries: 2,
     states: runs({ completed: 7, stalled: 1 }),
+    spend: { attempts: 15, requests: 14, costUsd: "0.49" },
   },
   {
     batchId: "b6d4f209-0000-4000-8000-000000000005",
@@ -200,6 +213,7 @@ const SWEEP_FIXTURES: SweepRow[] = [
     sightingsKnown: 61,
     saturatedQueries: 9,
     states: runs({ completed: 8, errored: 1 }),
+    spend: { attempts: 0, requests: 0, costUsd: "0" },
   },
   {
     // Five counts that sum to five, over six runs. One run holds a word this build has never
@@ -215,6 +229,7 @@ const SWEEP_FIXTURES: SweepRow[] = [
     sightingsKnown: 12,
     saturatedQueries: 0,
     states: runs({ completed: 5 }),
+    spend: { attempts: 0, requests: 0, costUsd: "0" },
   },
   {
     // A run that was never part of a grid. Its identity is its own id.
@@ -229,6 +244,7 @@ const SWEEP_FIXTURES: SweepRow[] = [
     sightingsKnown: 0,
     saturatedQueries: 0,
     states: runs({ completed: 1 }),
+    spend: { attempts: 0, requests: 0, costUsd: "0" },
   },
   {
     // Every run's city and niche came back null. Unrecorded, never blank.
@@ -243,6 +259,7 @@ const SWEEP_FIXTURES: SweepRow[] = [
     sightingsKnown: 1,
     saturatedQueries: 0,
     states: runs({ completed: 2 }),
+    spend: { attempts: 0, requests: 0, costUsd: "0" },
   },
 ];
 
@@ -1039,6 +1056,73 @@ export default function KitchenSink() {
                   hint="No sidebar, because the rail is already taking a side."
                 />
               </DetailLayout>
+            </Frame>
+          </div>
+        </Section>
+
+        <Section title="Costs — a number, and the absence of one">
+          <div className="space-y-2">
+            <div className="rounded-md border border-hairline">
+              <CostTable
+                page={{ rows: SWEEP_FIXTURES, total: SWEEP_FIXTURES.length }}
+                selected="3ad70e55-0000-4000-8000-000000000002"
+              />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CostCount page={{ rows: SWEEP_FIXTURES, total: SWEEP_FIXTURES.length }} />
+              <CostTotal page={{ rows: SWEEP_FIXTURES, total: SWEEP_FIXTURES.length }} />
+            </div>
+          </div>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">
+              The hollow ring is the whole point of this table.
+            </span>{" "}
+            Four of these sweeps have a price and four read{" "}
+            <span className="text-text-2">not recorded</span> — the ledger begins at
+            migration 010, and what earlier sweeps spent was never written down. That is
+            absent knowledge, so it takes no colour, exactly as{" "}
+            <span className="text-text-2">never looked</span> and{" "}
+            <span className="text-text-2">never rated</span> do. Rendering it as $0.00
+            would be the one reading this data cannot support, and it is also why the
+            table is ordered chronologically: you cannot rank by a quantity half the rows
+            do not have.
+          </p>
+          <p className="text-xs text-text-3">
+            <span className="text-text-2">Row four says 14 requests over 15 attempts.</span>{" "}
+            A request that failed is on the ledger and out of the money — Google charges
+            for some failures and from here we cannot tell which, so the money claim stays
+            a floor while the attempt is still recorded. The old counter incremented only
+            after a successful parse, which is why the figure this replaced under-reported
+            every sweep that met an error.
+          </p>
+          <div className="grid gap-4 @2xl:grid-cols-2">
+            <Frame label="rail — recorded, split by what was bought">
+              <SpendSplit
+                rows={[
+                  { sku: "places:text_search", attempts: 15, requests: 14, costUsd: "0.490" },
+                  { sku: "geocoding:geocode", attempts: 12, requests: 12, costUsd: "0.060" },
+                ]}
+              />
+            </Frame>
+            <Frame label="rail — nothing on the ledger">
+              <SpendSplit rows={[]} />
+            </Frame>
+          </div>
+          <p className="text-xs text-text-3">
+            The split is not decoration. §5.11&rsquo;s complaint has two halves —
+            <span className="text-text-2"> results_returned</span> undercounts text
+            searches <em>and</em> cannot see geocoding at all — so a single total would
+            answer the first while leaving the second looking answered too.
+          </p>
+          <div className="grid gap-4 @2xl:grid-cols-3">
+            <Frame label="loading">
+              <CostsLoading />
+            </Frame>
+            <Frame label="empty">
+              <CostsEmpty />
+            </Frame>
+            <Frame label="failed">
+              <CostsFailed />
             </Frame>
           </div>
         </Section>

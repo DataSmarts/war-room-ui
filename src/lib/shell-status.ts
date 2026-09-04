@@ -10,7 +10,7 @@ import { read } from "./db";
  * that adopts a migration, never ahead of one: between the two the chip in the left rail
  * reads `warn` and names both versions, which is the job it exists to do.
  */
-export const EXPECTED_SCHEMA = "008_business_contact_counts";
+export const EXPECTED_SCHEMA = "010_run_costs";
 
 /**
  * Three states, never two.

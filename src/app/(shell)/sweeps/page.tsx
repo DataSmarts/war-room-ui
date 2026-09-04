@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 
 import {
@@ -46,8 +47,12 @@ export default function SweepsPage() {
           A sweep&rsquo;s size is what its rows prove, not what it planned — the areas
           after an abort leave no rows at all, so a sweep that stopped and one still
           going look the same here. The <span className="text-text-2">standing</span> is
-          what tells them apart. The planned area count, the bias radius and what a sweep
-          cost live outside this database.
+          what tells them apart. The planned area count and the bias radius live outside this
+          database. What a sweep cost no longer does — it is on{" "}
+          <Link href="/costs" className="text-text-2 decoration-hairline underline-offset-4 hover:underline">
+            Costs
+          </Link>
+          , for the sweeps run since the ledger existed.
         </p>
       </div>
     </>
